@@ -10,9 +10,12 @@
  */
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { AtlasApiClient } from "./client.js";
+import { ensureAppRunning } from "./launch.js";
 import { createMcpServer } from "./server.js";
 
 const baseUrl = (process.env.ATLAS_URL?.trim() || "http://127.0.0.1:8000").replace(/\/+$/, "");
+
+await ensureAppRunning({ baseUrl });
 
 const server = createMcpServer(new AtlasApiClient(baseUrl));
 const transport = new StdioServerTransport();

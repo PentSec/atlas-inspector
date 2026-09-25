@@ -13,6 +13,7 @@ import type { Config } from "../server/config.js";
 import { loadConfig } from "../server/config.js";
 import { createLogger } from "../server/logger.js";
 import { AtlasApiClient } from "./client.js";
+import { ensureAppRunning } from "./launch.js";
 import { createMcpServer } from "./server.js";
 
 function envInt(name: string, fallback: number): number {
@@ -26,6 +27,8 @@ const logger = createLogger(config.log.level, config.log.pretty);
 const host = process.env.MCP_HOST?.trim() || "127.0.0.1";
 const port = envInt("MCP_PORT", 8087);
 const baseUrl = (process.env.ATLAS_URL?.trim() || "http://127.0.0.1:8000").replace(/\/+$/, "");
+
+await ensureAppRunning({ baseUrl, onLog: (line) => logger.info(line) });
 
 const server = createMcpServer(new AtlasApiClient(baseUrl));
 const app = Fastify({ loggerInstance: logger, bodyLimit: 16 * 1024 * 1024 });

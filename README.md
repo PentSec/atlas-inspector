@@ -163,10 +163,9 @@ The same v1 surface ships as a Model Context Protocol server (`src/mcp/`) with o
 ```bash
 npm install
 npm run build          # builds dist/server + dist/client + dist/mcp
-node start.mjs         # keep the app running → http://127.0.0.1:8000
 ```
 
-The MCP server is a thin stdio/HTTP wrapper over the running app; it does not start the app itself. Point `ATLAS_URL` (default `http://127.0.0.1:8000`) at it if you run elsewhere.
+The MCP is a thin stdio/HTTP wrapper over the app's `/api/v1`. It **auto-starts the app** on boot: it health-checks `ATLAS_URL` (default `http://127.0.0.1:8000`) and, if the app is not reachable at a loopback address, spawns `node start.mjs` detached and waits for `/api/v1/health` to answer. No need to run it by hand before opening opencode/Claude. Set `ATLAS_AUTOSTART=0` to opt out (or point `ATLAS_URL` at a remote host, which is never auto-started). Manual usage is unchanged — `node start.mjs` works standalone and the app it spawns keeps running after the assistant exits.
 
 **opencode** — add this to your opencode config (`~/.config/opencode/opencode.json` global, or a project-local `opencode.json`):
 
