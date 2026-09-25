@@ -45,6 +45,7 @@ const cv = q<HTMLCanvasElement>("#cv");
 const stageEl = q<HTMLElement>("#stage");
 const debugEl = q<HTMLDivElement>("#debugbox");
 const mInspect = q<HTMLButtonElement>("#mInspect");
+const mScan = q<HTMLButtonElement>("#mScan");
 const mDefine = q<HTMLButtonElement>("#mDefine");
 const tlInspect = q<HTMLElement>("#tlInspect");
 const definePanel = q<HTMLDivElement>("#definePanel");
@@ -58,25 +59,29 @@ const rowcountEl = q<HTMLElement>("#rowcount");
 const tableEl = q<HTMLTableElement>("table");
 
 // ---------- mode switch ----------
-function setMode(m: "inspect" | "define"): void {
+function setMode(m: "inspect" | "scan" | "define"): void {
     store.setState({ mode: m, hoverIndex: -1, activeIndex: -1 });
+    const inspect = m === "inspect";
+    const scan = m === "scan";
     const define = m === "define";
     document.body.classList.toggle("mode-define", define);
-    mInspect.classList.toggle("on", !define);
+    mInspect.classList.toggle("on", inspect);
+    mScan.classList.toggle("on", scan);
     mDefine.classList.toggle("on", define);
-    mInspect.setAttribute("aria-selected", String(!define));
+    mInspect.setAttribute("aria-selected", String(inspect));
+    mScan.setAttribute("aria-selected", String(scan));
     mDefine.setAttribute("aria-selected", String(define));
-    tlInspect.hidden = define;
+    tlInspect.hidden = !inspect && !scan;
     definePanel.hidden = !define;
-    scanPanel.hidden = define;
-    fdField.hidden = define;
-    buildField.hidden = define;
-    goBtn.hidden = define;
-    metaEl.hidden = define;
-    filterEl.hidden = define;
-    legendEl.hidden = define;
-    rowcountEl.hidden = define;
-    tableEl.hidden = define;
+    scanPanel.hidden = !scan;
+    fdField.hidden = !inspect;
+    buildField.hidden = !inspect;
+    goBtn.hidden = !inspect;
+    metaEl.hidden = !inspect;
+    filterEl.hidden = !inspect;
+    legendEl.hidden = !inspect;
+    rowcountEl.hidden = !inspect;
+    tableEl.hidden = !inspect;
     markRows(store);
     if (define) {
         dropEl.querySelector("strong")!.textContent = "No sheet loaded";
@@ -87,6 +92,16 @@ function setMode(m: "inspect" | "define"): void {
         if (!store.getState().image) {
             dropEl.style.display = "flex";
             writeStatus(store, "drop your sheet to define regions");
+        }
+    } else if (scan) {
+        dropEl.querySelector("strong")!.textContent = "No sheet loaded";
+        dropEl.querySelector("span")!.textContent =
+            "Drop a PNG/BLP sheet here to preview scanned regions on it.";
+        dropEl.querySelector(".hint")!.textContent =
+            "click to browse · wheel = zoom · drag = pan · hover = inspect";
+        if (!store.getState().image) {
+            dropEl.style.display = "flex";
+            writeStatus(store, "scan addon code to begin (paste or open a file)");
         }
     } else {
         dropEl.querySelector("strong")!.textContent = "No atlas loaded";
@@ -436,6 +451,7 @@ goBtn.addEventListener("click", () => void findAtlas());
 fdEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter") void findAtlas();
 });
+mScan.addEventListener("click", () => setMode("scan"));
 mDefine.addEventListener("click", () => setMode("define"));
 mInspect.addEventListener("click", () => setMode("inspect"));
 

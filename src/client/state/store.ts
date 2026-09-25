@@ -8,7 +8,7 @@ import type { LuaExportStyle } from "../../shared/lua.js";
 import type { ScannedRegion } from "../../shared/scan.js";
 import type { AtlasResultOk, Region, TextureResult } from "../../shared/types.js";
 
-export type Mode = "inspect" | "define";
+export type Mode = "inspect" | "scan" | "define";
 
 export interface DefineRegion {
     name: string;

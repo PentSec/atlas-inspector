@@ -40,7 +40,7 @@ export function toast(msg: string, isError = false): void {
   el.classList.toggle("error", isError);
   el.classList.add("show");
   if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 1600);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
 }
 
 export function copyText(text: string, msg: string): void {

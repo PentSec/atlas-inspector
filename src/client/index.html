@@ -12,6 +12,7 @@
   <h1>Atlas Inspector <span id="buildTag" class="build-tag">…</span></h1>
   <div id="mode" role="tablist" aria-label="Mode">
     <button id="mInspect" type="button" class="on" role="tab" aria-selected="true">Inspect</button>
+    <button id="mScan" type="button" role="tab" aria-selected="false">Scan</button>
     <button id="mDefine" type="button" role="tab" aria-selected="false">Define</button>
   </div>
   <div class="field" id="fdField">
@@ -30,12 +31,12 @@
 <div class="wrap">
   <aside id="pane">
     <div id="meta" aria-live="polite">No atlas loaded yet — type a FileDataID and press Enter.</div>
-    <div id="scanPanel">
+    <div id="scanPanel" hidden>
       <div class="shead-group">
         <button id="btScan" type="button">Scan addon code…</button>
-        <button id="btPaste" type="button" class="mini">paste</button>
-        <span id="scanMeta"></span>
+        <button id="btPaste" type="button">Paste code</button>
       </div>
+      <span id="scanMeta"></span>
       <textarea id="scanBox" hidden placeholder="Paste Lua region tables or :SetTexCoord calls, or XML &lt;Texture&gt;… (Ctrl+Enter to scan, Esc to close)"></textarea>
       <button id="btScanBox" type="button" hidden>Scan pasted code</button>
       <div id="scanRows"></div>
