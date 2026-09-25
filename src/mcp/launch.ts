@@ -14,7 +14,7 @@
  *   - ATLAS_AUTOSTART=0                  → opt out entirely.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,6 +67,7 @@ function delay(ms: number): Promise<void> {
 }
 
 function childLog(child: ChildProcess, filename: string): void {
+    mkdirSync(path.dirname(filename), { recursive: true });
     const stream = createWriteStream(filename, { flags: "a" });
     child.stdout?.pipe(stream);
     child.stderr?.pipe(stream);
