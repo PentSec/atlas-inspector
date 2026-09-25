@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Atlas Inspector</title>
+<link rel="stylesheet" href="./styles.css">
+<script type="module" src="./main.ts"></script>
+</head>
+<body>
+<header>
+  <h1>Atlas Inspector <span id="buildTag" class="build-tag">…</span></h1>
+  <div id="mode" role="tablist" aria-label="Mode">
+    <button id="mInspect" type="button" class="on" role="tab" aria-selected="true">Inspect</button>
+    <button id="mDefine" type="button" role="tab" aria-selected="false">Define</button>
+  </div>
+  <div class="field" id="fdField">
+    <label for="fdid" class="sr-only">FileDataID</label>
+    <input id="fdid" type="text" inputmode="numeric" placeholder="FileDataID" aria-label="FileDataID">
+  </div>
+  <div class="field" id="buildField">
+    <label for="build" class="sr-only">Build</label>
+    <select id="build" aria-label="Build">
+      <option value="">default (latest existing)</option>
+    </select>
+  </div>
+  <button id="go" type="button">Find atlas</button>
+  <span id="status" role="status" aria-live="polite"></span>
+</header>
+<div class="wrap">
+  <aside id="pane">
+    <div id="meta" aria-live="polite">No atlas loaded yet — type a FileDataID and press Enter.</div>
+    <div id="scanPanel">
+      <div class="shead-group">
+        <button id="btScan" type="button">Scan addon code…</button>
+        <button id="btPaste" type="button" class="mini">paste</button>
+        <span id="scanMeta"></span>
+      </div>
+      <textarea id="scanBox" hidden placeholder="Paste Lua region tables or :SetTexCoord calls, or XML &lt;Texture&gt;… (Ctrl+Enter to scan, Esc to close)"></textarea>
+      <button id="btScanBox" type="button" hidden>Scan pasted code</button>
+      <div id="scanRows"></div>
+      <div class="cmd">
+        <button id="scanCopy" type="button" disabled>Copy all</button>
+        <button id="scanClear" type="button">Clear</button>
+      </div>
+    </div>
+    <label for="filter" class="sr-only">Filter region names</label>
+    <input id="filter" type="text" placeholder="filter names…" aria-label="Filter region names">
+    <div id="legend" aria-hidden="true"></div>
+    <div id="rowcount"></div>
+    <table>
+      <caption class="sr-only">Atlas regions</caption>
+      <thead><tr><th scope="col">Atlas name</th><th scope="col">rect (px)</th><th scope="col">disp</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div id="definePanel" hidden>
+      <p id="dHint">Drop your sheet, then <b>drag on the canvas</b> to draw each region. Select a region to move / resize it by its edges; copy one or export all as Lua.</p>
+      <label for="dName" class="sr-only">Name for the next region</label>
+      <input id="dName" type="text" placeholder="name (auto: region1, region2…)" aria-label="Name for the next region">
+      <div id="dCount"></div>
+      <div id="dList"></div>
+      <div class="cmd">
+        <label for="dName" class="sr-only">Auto regions from alpha islands</label>
+        <button id="dAuto" type="button">Auto regions (alpha)</button>
+        <button id="dCopyAll" type="button" disabled>Copy all Lua</button>
+        <button id="dClear" type="button">Clear all</button>
+      </div>
+    </div>
+  </aside>
+  <main id="stage">
+    <div id="drop" role="button" tabindex="0" aria-label="Drop a PNG or BLP sheet here, or click to browse for one">
+      <strong>No atlas loaded</strong>
+      <span>Type a FileDataID above, or drop a PNG/BLP sheet here to preview your own.</span>
+      <span class="hint">click to browse · wheel = zoom · drag = pan · hover = inspect</span>
+    </div>
+    <input id="fileInput" type="file" accept="image/*,.blp" class="sr-only" tabindex="-1" aria-hidden="true">
+    <input id="scanFile" type="file" accept=".lua,.xml,.txt,.toc" class="sr-only" tabindex="-1" aria-hidden="true">
+    <canvas id="cv" tabindex="0" aria-label="Atlas sheet with region overlays"></canvas>
+    <div id="loading" hidden><div class="spinner"></div><span id="loadingMsg">Loading…</span></div>
+    <div id="tooltip" role="tooltip"></div>
+  </main>
+</div>
+<div id="toolbar">
+  <button id="btreset" type="button" title="Reset zoom/pan (F)">Reset view</button>
+  <span id="tlInspect">
+    <label for="expStyle" class="sr-only">Copy export style</label>
+    <select id="expStyle" aria-label="Copy export style">
+      <option value="default">Default (legacy)</option>
+      <option value="coords">Coords only</option>
+      <option value="atlasinfo">AtlasInfo</option>
+      <option value="sheetfirst">SheetFirst</option>
+      <option value="xml">XML TexCoords</option>
+    </select>
+    <button id="btdl" type="button" disabled>Download .blp</button>
+    <button id="btlua" type="button" disabled>Copy Lua</button>
+    <button id="btjson" type="button" disabled>Copy JSON</button>
+  </span>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="debugbox" aria-label="debug log"></div>
+</body>
+</html>

@@ -1,0 +1,63 @@
+{
+    "name": "atlas-inspector",
+    "version": "0.2.0",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=22.12.0 <27"
+    },
+    "scripts": {
+        "dev:server": "tsx watch --env-file-if-exists=.env src/server/index.ts",
+        "dev:client": "vite",
+        "build": "npm run build:server && npm run build:client",
+        "build:server": "tsc -p tsconfig.server.json",
+        "build:client": "vite build",
+        "start": "node start.mjs",
+        "start:mcp": "node dist/server/mcp/index.js",
+        "start:mcp:http": "node dist/server/mcp/http.js",
+        "dev:mcp": "tsx src/mcp/index.ts",
+        "test": "vitest run",
+        "test:watch": "vitest",
+        "test:e2e": "playwright test",
+        "fetch:listfile": "node scripts/fetch-listfile.mjs",
+        "fetch:blp-fixtures": "node scripts/fetch-blp-fixtures.mjs",
+        "make:goldens": "node scripts/make-goldens.mjs",
+        "bench": "node scripts/bench.mjs",
+        "lint": "eslint .",
+        "format": "prettier --write .",
+        "format:check": "prettier --check .",
+        "typecheck": "tsc -p tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "@fastify/cors": "^11.3.0",
+        "@fastify/rate-limit": "^11.2.0",
+        "@fastify/static": "^10.1.4",
+        "@fastify/swagger": "^9.9.0",
+        "@fastify/swagger-ui": "^6.1.1",
+        "@modelcontextprotocol/sdk": "^1.30.1",
+        "@pinta365/blp": "npm:@jsr/pinta365__blp",
+        "csv-parse": "^7.0.2",
+        "fastify": "^5.12.5",
+        "fastify-type-provider-zod": "^7.0.0",
+        "lru-cache": "^11.5.3",
+        "pino": "^10.3.1",
+        "undici": "^8.11.2",
+        "zod": "^4.6.5"
+    },
+    "devDependencies": {
+        "@eslint/js": "^10.0.1",
+        "@playwright/test": "^1.63.0",
+        "@tanstack/virtual-core": "^3.17.11",
+        "@types/node": "^26.6.2",
+        "eslint": "^10.11.0",
+        "globals": "^17.12.0",
+        "pino-pretty": "^13.1.3",
+        "prettier": "^3.6.0",
+        "tsx": "^4.23.15",
+        "typescript": "^6.0.3",
+        "typescript-eslint": "^8.70.1",
+        "vite": "^8.3.1",
+        "vitest": "^5.0.1",
+        "zustand": "^5.0.15"
+    }
+}

@@ -1,0 +1,15 @@
+dist/
+node_modules/
+cache/
+playwright-report/
+test-results/
+tests/fixtures/
+.atl/
+.codegraph/
+package-lock.json
+*.log
+# Legacy monoliths, replaced during Fase 2/3
+app.js
+server.js
+index.html
+styles.css

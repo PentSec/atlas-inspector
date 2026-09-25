@@ -1,0 +1,9 @@
+# header row tolerated
+FileDataID;Name
+1;interface/cinematics/logo_800.avi
+22;interface/cinematics/wow_intro_1024.avi
+130871;interface/buttons/white8x8.blp
+134400;interface/icons/inv_misc_questionmark.blp
+5548240;interface/glues/common/cinematicbuttonslargeatlas.blp
+921230;interface/talentframe/talentframeatlas.blp
+junk line with no fdid
