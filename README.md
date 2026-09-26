@@ -23,9 +23,21 @@ Ships as a local web app: a **Fastify + TypeScript API** (Node.js) with a **stri
 ## How it works
 
 ```mermaid
-flowchart TD
+flowchart TB
+%%{init: {"flowchart": {"htmlLabels": true, "nodeSpacing": 45, "rankSpacing": 60}} }%%
+
+node_mcpuser(("MCP client"))
+node_user(("Inspector user"))
+
+subgraph group_agent["Agent interface"]
+  direction TB
+  node_mcp["MCP server<br/>[server.ts]"]
+  node_tools["Atlas tools<br/>[tools.ts]"]
+  node_mcpclient["MCP API client<br/>[client.ts]"]
+end
 
 subgraph group_browser["Browser workbench"]
+  direction TB
   node_main["UI event wiring<br/>[main.ts]"]
   node_clientapi["API client<br/>[client.ts]"]
   node_store["View state<br/>[store.ts]"]
@@ -36,6 +48,7 @@ subgraph group_browser["Browser workbench"]
 end
 
 subgraph group_api["API and data"]
+  direction TB
   node_server["Fastify application<br/>[app.ts]"]
   node_v1["Versioned API<br/>[v1.ts]"]
   node_legacy["Legacy API<br/>[legacy.ts]"]
@@ -48,50 +61,46 @@ subgraph group_api["API and data"]
 end
 
 subgraph group_analysis["Region analysis"]
+  direction TB
   node_scan["Addon scanner<br/>[scan.ts]"]
   node_islands["Alpha islands<br/>[islands.ts]"]
   node_lua["Lua exporters<br/>[lua.ts]"]
   node_schemas["Wire schemas<br/>[schemas.ts]"]
 end
 
-subgraph group_agent["Agent interface"]
-  node_mcp["MCP server<br/>[server.ts]"]
-  node_tools["Atlas tools<br/>[tools.ts]"]
-  node_mcpclient["MCP API client<br/>[client.ts]"]
-end
+node_mcpuser --> node_mcp
+node_user --> node_main
 
-node_user(("Inspector user"))
-node_mcpuser(("MCP client"))
+node_mcp --> node_tools
+node_tools --> node_mcpclient
+node_main --> node_clientapi
+node_main --> node_store
+node_main --> node_canvas
+node_main --> node_define
+node_main --> node_listui
+node_main --> node_scanui
 
-node_user -->|"uses"| node_main
-node_main -->|"requests"| node_clientapi
-node_main -->|"updates"| node_store
-node_main -->|"renders"| node_canvas
-node_main -->|"edits"| node_define
-node_main -->|"renders"| node_listui
-node_main -->|"renders"| node_scanui
-node_clientapi -->|"HTTP requests"| node_v1
-node_server -->|"registers"| node_v1
-node_server -->|"registers"| node_legacy
-node_v1 -->|"resolves atlases"| node_repo
-node_repo -->|"fetches data"| node_wago
-node_repo -->|"reads/writes"| node_cache
-node_v1 -->|"searches"| node_listfile
-node_listfile -->|"reads/writes"| node_cache
-node_v1 -->|"decodes BLP"| node_decode
-node_decode -->|"decodes"| node_decoder
-node_decode -->|"caches PNG"| node_cache
-node_v1 -->|"analyzes alpha"| node_islands
-node_v1 -->|"scans source"| node_scan
-node_v1 -->|"formats export"| node_lua
-node_clientapi -->|"uses contracts"| node_schemas
-node_v1 -->|"validates"| node_schemas
-node_scanui -->|"analyzes locally"| node_scan
-node_listui -->|"formats regions"| node_lua
-node_mcpuser -.->|"connects"| node_mcp
-node_mcp -->|"registers tools"| node_tools
-node_tools -->|"invokes"| node_mcpclient
-node_mcpclient -.->|"HTTP requests"| node_v1
+node_mcpclient --> node_v1
+node_clientapi --> node_v1
+
+node_v1 --> node_repo
+node_v1 --> node_listfile
+node_v1 --> node_decode
+node_v1 --> node_islands
+node_v1 --> node_scan
+node_v1 --> node_lua
+node_v1 --> node_schemas
+
+node_server -.-> node_v1
+node_server -.-> node_legacy
+node_repo --> node_wago
+node_repo --> node_cache
+node_listfile --> node_cache
+node_decode --> node_decoder
+node_decode --> node_cache
+node_clientapi --> node_schemas
+node_scanui --> node_scan
+node_listui --> node_lua
 
 click node_main "https://github.com/pentsec/atlas-inspector/blob/main/src/client/main.ts"
 click node_clientapi "https://github.com/pentsec/atlas-inspector/blob/main/src/client/api/client.ts"
@@ -122,8 +131,6 @@ classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
 classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
 classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
 classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
-classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
-classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
 class node_main,node_clientapi,node_store,node_canvas,node_define,node_listui,node_scanui,node_user,node_mcpuser toneBlue
 class node_server,node_v1,node_legacy,node_repo,node_wago,node_cache,node_listfile,node_decode,node_decoder toneAmber
 class node_scan,node_islands,node_lua,node_schemas toneMint
