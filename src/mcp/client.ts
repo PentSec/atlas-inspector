@@ -12,11 +12,37 @@ import {
     HealthSchema,
     ProblemSchema,
     ScanResultSchema,
+    SEARCH_WAIT_MAX_SECONDS,
+    SearchCapabilitySchema,
     SearchResultSchema,
 } from "../shared/schemas.js";
 import type { ScanRequestSchema } from "../shared/schemas.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
+
+/** Headroom over the server's own `?wait=` bound so its answer always arrives. */
+const WAIT_HEADROOM_MS = 5_000;
+
+/**
+ * Per-request timeout, derived from the `wait` the caller asked for.
+ *
+ * The server caps `?wait=` at SEARCH_WAIT_MAX_SECONDS and always answers inside
+ * that bound, so giving the client exactly that much plus headroom guarantees
+ * the caller receives the server's clear "still indexing" payload instead of an
+ * opaque AbortError. A fixed 15s timeout used to be shorter than a real first-run
+ * ~150 MB download, which made the advertised `wait: 25` advice impossible to
+ * honour on a cold install.
+ *
+ * Calls that do not ask to wait keep the fast-fail baseline, so a hung upstream
+ * on atlas_get or atlas_scan still surfaces in 15s.
+ */
+export function requestTimeoutMs(waitSeconds?: number, baseMs = REQUEST_TIMEOUT_MS): number {
+    // `wait: 0` is an explicit "do not block", so it must not buy headroom.
+    if (waitSeconds === undefined || !Number.isFinite(waitSeconds) || waitSeconds <= 0)
+        return baseMs;
+    const bounded = Math.min(waitSeconds, SEARCH_WAIT_MAX_SECONDS);
+    return Math.max(baseMs, bounded * 1000 + WAIT_HEADROOM_MS);
+}
 
 /** API failure — holds the HTTP status (0 = the app is unreachable). */
 export class AtlasApiError extends Error {
@@ -39,15 +65,28 @@ interface RequestOptions {
     query?: Record<string, string>;
     json?: unknown;
     text?: boolean;
+    /** Overrides the baseline timeout; used by `search` to honour `wait`. */
+    timeoutMs?: number;
+}
+
+export interface AtlasApiClientOptions {
+    /** Baseline fast-fail timeout for calls that do not opt into a longer wait. */
+    baseTimeoutMs?: number;
 }
 
 export class AtlasApiClient {
     readonly baseUrl: string;
     #fetch: FetchLike;
+    #baseTimeoutMs: number;
 
-    constructor(baseUrl: string, fetchImpl: FetchLike = fetch) {
+    constructor(
+        baseUrl: string,
+        fetchImpl: FetchLike = fetch,
+        options: AtlasApiClientOptions = {},
+    ) {
         this.baseUrl = baseUrl.replace(/\/+$/, "");
         this.#fetch = fetchImpl;
+        this.#baseTimeoutMs = options.baseTimeoutMs ?? REQUEST_TIMEOUT_MS;
     }
 
     async health() {
@@ -86,11 +125,16 @@ export class AtlasApiClient {
         return String(body);
     }
 
-    async search(q: string, limit?: number) {
+    async search(q: string, limit?: number, waitSeconds?: number) {
         return SearchResultSchema.parse(
             await this.#request({
                 path: "/search",
-                query: { q, ...(limit !== undefined ? { limit: String(limit) } : {}) },
+                timeoutMs: requestTimeoutMs(waitSeconds, this.#baseTimeoutMs),
+                query: {
+                    q,
+                    ...(limit !== undefined ? { limit: String(limit) } : {}),
+                    ...(waitSeconds !== undefined ? { wait: String(waitSeconds) } : {}),
+                },
             }),
         );
     }
@@ -98,6 +142,25 @@ export class AtlasApiClient {
     async scan(body: ScanRequestBody) {
         return ScanResultSchema.parse(
             await this.#request({ path: "/scan", method: "POST", json: body }),
+        );
+    }
+
+    /**
+     * Start (or join) the authorized listfile download.
+     *
+     * Callers MUST have obtained the user's consent first — this is the only
+     * path that writes ~146 MB, and it deliberately has no default. The
+     * `waitSeconds` bound keeps the response inside the derived timeout so a
+     * slow link degrades into "still indexing" rather than a client-side abort.
+     */
+    async fetchListfile(waitSeconds?: number) {
+        return SearchCapabilitySchema.parse(
+            await this.#request({
+                path: "/listfile/fetch",
+                method: "POST",
+                json: { ...(waitSeconds !== undefined ? { wait: waitSeconds } : {}) },
+                timeoutMs: requestTimeoutMs(waitSeconds, this.#baseTimeoutMs),
+            }),
         );
     }
 
@@ -110,7 +173,7 @@ export class AtlasApiClient {
         const init: RequestInit = {
             method: opts.method ?? "GET",
             headers: { accept: "application/json" },
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            signal: AbortSignal.timeout(opts.timeoutMs ?? this.#baseTimeoutMs),
         };
         if (opts.json !== undefined) {
             init.headers = { ...init.headers, "content-type": "application/json" };

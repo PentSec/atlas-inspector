@@ -9,10 +9,10 @@
 import type { Region } from "./types.js";
 
 export interface NormalizedRect {
-  u0: number;
-  u1: number;
-  v0: number;
-  v1: number;
+    u0: number;
+    u1: number;
+    v0: number;
+    v1: number;
 }
 
 export function regionWidth(r: Pick<Region, "left" | "right">): number {

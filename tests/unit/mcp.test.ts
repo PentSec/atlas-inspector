@@ -6,7 +6,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it } from "vitest";
-import { AtlasApiClient, type FetchLike } from "../../src/mcp/client.js";
+import {
+    AtlasApiClient,
+    AtlasApiError,
+    requestTimeoutMs,
+    type FetchLike,
+} from "../../src/mcp/client.js";
 import { createMcpServer } from "../../src/mcp/server.js";
 
 function text(res: Record<string, unknown>): string {
@@ -77,7 +82,25 @@ const SCAN_PAYLOAD = {
     ],
 };
 
-const HEALTH_PAYLOAD = { status: "ok", service: "atlas-inspector", version: "0.2.0" };
+const HEALTH_PAYLOAD = {
+    status: "ok",
+    service: "atlas-inspector",
+    version: "0.2.0",
+    capabilities: { search: { status: "ready", entries: 2_341_203 } },
+};
+/** Cold install: the process is alive but atlas_search cannot answer yet. */
+const HEALTH_INDEXING_PAYLOAD = {
+    status: "ok",
+    service: "atlas-inspector",
+    version: "0.2.0",
+    capabilities: {
+        search: {
+            status: "indexing",
+            entries: 0,
+            detail: "building the listfile index (about 150 MB, one time).",
+        },
+    },
+};
 const BUILDS_PAYLOAD = { builds: ["12.1.5.69594", "12.0.2.57020"] };
 
 function stubFetch(routes: Record<string, unknown>): FetchLike {
@@ -117,6 +140,7 @@ describe("atlas MCP server", () => {
                     "atlas_file_info",
                     "atlas_get",
                     "atlas_list_builds",
+                    "atlas_prepare_index",
                     "atlas_regions",
                     "atlas_scan",
                     "atlas_search",
@@ -218,11 +242,68 @@ describe("atlas MCP server", () => {
         try {
             const health = await mcpClient.callTool({ name: "atlas_server_status", arguments: {} });
             expect((health.structuredContent as typeof HEALTH_PAYLOAD).version).toBe("0.2.0");
-            expect(text(health)).toContain("is healthy");
+            expect(text(health)).toContain("all tools available");
+            expect(text(health)).toContain("2,341,203");
 
             const builds = await mcpClient.callTool({ name: "atlas_list_builds", arguments: {} });
             expect((builds.structuredContent as typeof BUILDS_PAYLOAD).builds).toHaveLength(2);
             expect(text(builds)).toContain("12.1.5.69594");
+        } finally {
+            await mcpClient.close();
+            await server.close();
+        }
+    });
+
+    it("atlas_server_status says DEGRADED instead of healthy on a cold install", async () => {
+        const { mcpClient, server } = await connectToolClient(
+            new AtlasApiClient(
+                "http://127.0.0.1:8000",
+                stubFetch({ "/api/v1/health": HEALTH_INDEXING_PAYLOAD }),
+            ),
+        );
+        try {
+            const res = await mcpClient.callTool({ name: "atlas_server_status", arguments: {} });
+            const out = text(res);
+
+            // The regression this whole change exists for: "healthy" while
+            // atlas_search could not answer a single query.
+            expect(out).not.toContain("all tools available");
+            expect(out).toContain("DEGRADED");
+            expect(out).toContain("indexing");
+            expect(out).toContain("atlas_search");
+            expect(out).toMatch(/wait: 25|poll/);
+        } finally {
+            await mcpClient.close();
+            await server.close();
+        }
+    });
+
+    it("atlas_search refuses to present a cold index as 'no such file'", async () => {
+        const { mcpClient, server } = await connectToolClient(
+            new AtlasApiClient(
+                "http://127.0.0.1:8000",
+                stubFetch({
+                    "/api/v1/search?q=tooltip&limit=25&wait=0": {
+                        status: "indexing",
+                        hits: [],
+                        detail: "building the listfile index (about 150 MB, one time).",
+                    },
+                }),
+            ),
+        );
+        try {
+            const res = await mcpClient.callTool({
+                name: "atlas_search",
+                arguments: { q: "tooltip" },
+            });
+
+            // Zero hits from an unbuilt index must be an error, never a
+            // successful empty result the agent reads as ground truth.
+            expect(res.isError).toBe(true);
+            expect(text(res)).toContain("indexing");
+            expect(text(res)).toMatch(/NOT a real answer/);
+            expect(text(res)).toMatch(/wait: 25/);
+            expect((res.structuredContent as { hits: unknown[] }).hits).toEqual([]);
         } finally {
             await mcpClient.close();
             await server.close();
@@ -297,5 +378,101 @@ describe("atlas MCP server", () => {
             await mcpClient.close();
             await server.close();
         }
+    });
+});
+
+/** A fetch that answers after `delayMs` but rejects as soon as the signal aborts. */
+function slowFetch(delayMs: number, payload: unknown): FetchLike {
+    return (_input, init) =>
+        new Promise<Response>((resolve, reject) => {
+            const signal = init?.signal ?? null;
+            const timer = setTimeout(() => {
+                resolve(
+                    new Response(JSON.stringify(payload), {
+                        status: 200,
+                        headers: { "content-type": "application/json" },
+                    }),
+                );
+            }, delayMs);
+            signal?.addEventListener("abort", () => {
+                clearTimeout(timer);
+                reject(signal.reason ?? new Error("aborted"));
+            });
+        });
+}
+
+describe("requestTimeoutMs", () => {
+    it("keeps the fast-fail baseline for calls that do not wait", () => {
+        expect(requestTimeoutMs(undefined)).toBe(15_000);
+        expect(requestTimeoutMs(undefined, 250)).toBe(250);
+    });
+
+    it("never returns less than the baseline", () => {
+        expect(requestTimeoutMs(0)).toBe(15_000);
+        expect(requestTimeoutMs(1)).toBe(15_000);
+    });
+
+    it("adds headroom over the wait the caller asked for", () => {
+        expect(requestTimeoutMs(20)).toBe(25_000);
+        expect(requestTimeoutMs(25)).toBe(30_000);
+    });
+
+    it("clamps out-of-range and non-finite input instead of trusting it", () => {
+        expect(requestTimeoutMs(99)).toBe(30_000);
+        expect(requestTimeoutMs(-5)).toBe(15_000);
+        expect(requestTimeoutMs(Number.NaN)).toBe(15_000);
+    });
+
+    it("honours a custom baseline", () => {
+        expect(requestTimeoutMs(2, 50)).toBe(7_000);
+    });
+
+    it("grants no headroom when the caller did not ask to wait", () => {
+        // A small baseline is what exposes this: with the 15s default, a stray
+        // 5s headroom on wait=0 stays hidden below the baseline.
+        expect(requestTimeoutMs(0, 50)).toBe(50);
+        expect(requestTimeoutMs(-1, 50)).toBe(50);
+    });
+});
+
+describe("AtlasApiClient timeout derivation", () => {
+    // Regression: a real first-run ~150 MB download takes ~19s, longer than the
+    // old fixed 15s client timeout, so the advertised `wait: 25` could never be
+    // honoured — the caller got an opaque AbortError instead of the server's
+    // "still indexing" answer.
+    const INDEXING_SEARCH = {
+        status: "indexing",
+        hits: [],
+        detail: "building the listfile index (about 150 MB, one time).",
+    };
+
+    it("survives a response that outlasts the baseline when the caller asked to wait", async () => {
+        const client = new AtlasApiClient(
+            "http://127.0.0.1:8000",
+            slowFetch(400, INDEXING_SEARCH),
+            {
+                baseTimeoutMs: 50,
+            },
+        );
+        const result = await client.search("tooltip", 25, 2);
+        expect(result.status).toBe("indexing");
+    });
+
+    it("still fails fast when the caller did not ask to wait", async () => {
+        const client = new AtlasApiClient(
+            "http://127.0.0.1:8000",
+            slowFetch(400, INDEXING_SEARCH),
+            {
+                baseTimeoutMs: 50,
+            },
+        );
+        await expect(client.search("tooltip", 25, 0)).rejects.toThrow(AtlasApiError);
+    });
+
+    it("still fails fast for calls that never take a wait", async () => {
+        const client = new AtlasApiClient("http://127.0.0.1:8000", slowFetch(400, ATLAS_PAYLOAD), {
+            baseTimeoutMs: 50,
+        });
+        await expect(client.atlas(1030215)).rejects.toThrow(AtlasApiError);
     });
 });

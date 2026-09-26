@@ -77,7 +77,10 @@ function childLog(child: ChildProcess, filename: string): void {
 }
 
 export async function ensureAppRunning(opts: EnsureAppOptions = {}): Promise<EnsureAppResult> {
-    const baseUrl = (opts.baseUrl ?? process.env.ATLAS_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+    const baseUrl = (opts.baseUrl ?? process.env.ATLAS_URL ?? "http://127.0.0.1:8000").replace(
+        /\/+$/,
+        "",
+    );
     const ping = opts.ping ?? healthReachable;
     const log = opts.onLog ?? logToStderr;
     const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -85,7 +88,9 @@ export async function ensureAppRunning(opts: EnsureAppOptions = {}): Promise<Ens
     if (await ping(baseUrl)) return { started: false, ok: true };
 
     if (process.env.ATLAS_AUTOSTART === "0") {
-        log("ATLAS_AUTOSTART=0 and the app is not reachable — tools will report connection errors.");
+        log(
+            "ATLAS_AUTOSTART=0 and the app is not reachable — tools will report connection errors.",
+        );
         return { started: false, ok: false };
     }
 
@@ -115,7 +120,9 @@ export async function ensureAppRunning(opts: EnsureAppOptions = {}): Promise<Ens
         await delay(POLL_INTERVAL_MS);
         if (await ping(baseUrl)) return { started: true, ok: true, pid: child.pid };
         if (Date.now() >= deadline) {
-            log(`app did not answer within ${timeoutMs}ms (pid ${child.pid}) — check cache/mcp-app.log.`);
+            log(
+                `app did not answer within ${timeoutMs}ms (pid ${child.pid}) — check cache/mcp-app.log.`,
+            );
             return { started: true, ok: false, pid: child.pid };
         }
     }

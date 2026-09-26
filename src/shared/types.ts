@@ -5,5 +5,5 @@
 export * from "./schemas.js";
 
 export interface BuildItem {
-  version: string;
+    version: string;
 }

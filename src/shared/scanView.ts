@@ -12,12 +12,7 @@ import {
     regionToPx,
     type ScannedRegion,
 } from "./scan.js";
-import {
-    luaExportStyled,
-    texCoordLineNorm,
-    texCoordLinePx,
-    type LuaExportStyle,
-} from "./lua.js";
+import { luaExportStyled, texCoordLineNorm, texCoordLinePx, type LuaExportStyle } from "./lua.js";
 
 export interface PixelRect {
     left: number;

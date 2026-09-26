@@ -12,15 +12,15 @@ const pino = pinoDefault;
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
 
 export function createLogger(level: LogLevel, pretty: boolean): Logger {
-  return pino({
-    level,
-    ...(pretty
-      ? {
-          transport: {
-            target: "pino-pretty",
-            options: { colorize: true, translateTime: "HH:MM:ss" },
-          },
-        }
-      : {}),
-  });
+    return pino({
+        level,
+        ...(pretty
+            ? {
+                  transport: {
+                      target: "pino-pretty",
+                      options: { colorize: true, translateTime: "HH:MM:ss" },
+                  },
+              }
+            : {}),
+    });
 }

@@ -93,6 +93,8 @@ beforeAll(async () => {
         UPSTREAM_MAX_RETRIES: "0",
         UPSTREAM_TIMEOUT_MS: "2000",
         LOG_PRETTY: "0",
+        // Keep the suite hermetic: the read path never downloads, and the
+        // consent-gated fetch is never triggered from these tests.
     });
     logger = createLogger("silent" as never, false).child({});
 
@@ -237,5 +239,34 @@ describe("atlas MCP over the real v1 app", () => {
         const res = await mcpClient.callTool({ name: "atlas_server_status", arguments: {} });
         const sc = res.structuredContent as { status: string; service: string };
         expect(sc).toMatchObject({ status: "ok", service: "atlas-inspector" });
+    });
+
+    // The dangerous failure mode: a cold install where atlas_search returns zero
+    // hits. If that is a *successful* empty result, an agent concludes the texture
+    // does not exist and never retries. It must be an error carrying the reason.
+    it("atlas_search refuses to pass off an unbuilt index as zero hits", async () => {
+        const res = await mcpClient.callTool({
+            name: "atlas_search",
+            arguments: { q: "definitely-not-a-real-texture" },
+        });
+        expect(res.isError).toBe(true);
+        const sc = res.structuredContent as { status: string; hits: unknown[] };
+        expect(sc.status).toBe("absent");
+        expect(sc.hits).toEqual([]);
+        const text = (res.content as Array<{ type: string; text: string }>)[0]!.text;
+        expect(text).toContain("NOT a real answer");
+        expect(text).toContain("atlas_server_status");
+    });
+
+    // Guards the SDK outputSchema contract for a tool that declares one: a
+    // not-ready search still has to carry structuredContent, and the SDK must
+    // accept isError + structuredContent together (verified on SDK 1.30.1).
+    it("atlas_search keeps its outputSchema valid while reporting a non-ready status", async () => {
+        const res = await mcpClient.callTool({
+            name: "atlas_search",
+            arguments: { q: "x", wait: 1 },
+        });
+        expect(res.isError).toBe(true);
+        expect(res.structuredContent).toMatchObject({ status: "absent" });
     });
 });

@@ -98,37 +98,42 @@ npm run format        # prettier --write
 
 Read from the environment (or a `.env` file next to the repo root — supported out of the box by Node ≥ 20.6):
 
-| Variable               | Default                   | Meaning                                                  |
-| ---------------------- | ------------------------- | -------------------------------------------------------- |
-| `PORT`                 | `8000`                    | HTTP listen port                                         |
-| `HOST`                 | `127.0.0.1`               | Listen address (`0.0.0.0` to expose on the LAN)          |
-| `LOG_LEVEL`            | `info`                    | `trace`/`debug`/`info`/`warn`/`error`/`fatal`            |
-| `LOG_PRETTY`           | `1`                       | prettified pino logs when `1`/`true`                     |
-| `ATLAS_ROOT`           | auto                      | project root (overrides the auto-detected repo location) |
-| `WAGO_BASE_URL`        | `https://wago.tools`      | upstream data source base                                |
-| `WAGO_USER_AGENT`      | `atlas-inspector/0.2.0 …` | UA sent upstream                                         |
-| `UPSTREAM_TIMEOUT_MS`  | `30000`                   | upstream request timeout                                 |
-| `UPSTREAM_MAX_RETRIES` | `5`                       | retries for recoverable upstream errors                  |
-| `DB_CACHE_TTL_MS`      | `86400000`                | cache TTL for DB2/listfile lookups                       |
-| `BLP_MAX_BYTES`        | `67108864`                | max accepted `.blp` payload size                         |
-| `LISTFILE_PATH`        | `cache/listfile.csv`      | local listfile for name lookups if configured            |
+| Variable                        | Default                          | Meaning                                                     |
+| ------------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| `PORT`                          | `8000`                           | HTTP listen port                                            |
+| `HOST`                          | `127.0.0.1`                      | Listen address (`0.0.0.0` to expose on the LAN)             |
+| `LOG_LEVEL`                     | `info`                           | `trace`/`debug`/`info`/`warn`/`error`/`fatal`               |
+| `LOG_PRETTY`                    | `1`                              | prettified pino logs when `1`/`true`                        |
+| `ATLAS_ROOT`                    | auto                             | project root (overrides the auto-detected repo location)    |
+| `WAGO_BASE_URL`                 | `https://wago.tools`             | upstream data source base                                   |
+| `WAGO_USER_AGENT`               | `atlas-inspector/0.2.0 …`        | UA sent upstream                                            |
+| `UPSTREAM_TIMEOUT_MS`           | `30000`                          | upstream request timeout                                    |
+| `UPSTREAM_MAX_RETRIES`          | `5`                              | retries for recoverable upstream errors                     |
+| `DB_CACHE_TTL_MS`               | `86400000`                       | cache TTL for DB2/listfile lookups                          |
+| `BLP_MAX_BYTES`                 | `67108864`                       | max accepted `.blp` payload size                            |
+| `LISTFILE_PATH`                 | `cache/listfile.csv`             | local listfile for name lookups if configured               |
+| `LISTFILE_URL`                  | community-listfile release asset | where the index is downloaded from (air-gapped mirrors)     |
+| `LISTFILE_RELEASE_API`          | GitHub `releases/latest`         | release metadata used to pin downloads and detect staleness |
+| `LISTFILE_CHECK_INTERVAL_HOURS` | `7`                              | how often the server checks for a newer release (min 7)     |
+| `LISTFILE_WAIT_MAX_MS`          | `25000`                          | ceiling for `?wait=` on `/api/v1/search`                    |
 
 ## API (v1)
 
 All v1 endpoints are schematized (zod); failing lookups return [RFC 9457 Problem+JSON](https://www.rfc-editor.org/rfc/rfc9457) with HTTP status codes.
 
-| Method | Path                          | Description                                                                                                                    |
-| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `GET`  | `/api/v1/health`              | Liveness + version.                                                                                                            |
-| `GET`  | `/api/v1/builds`              | Selectable game builds (offline fallback list + live merge).                                                                   |
-| `GET`  | `/api/v1/files/:fdid`         | File metadata for a FileDataID.                                                                                                |
-| `GET`  | `/api/v1/files/:fdid/blp`     | Download the raw `.blp` file.                                                                                                  |
-| `POST` | `/api/v1/blp/decode`          | Decode uploaded `.blp` bytes; returns a cached `pngUrl`.                                                                       |
-| `GET`  | `/api/v1/atlas/:fdid?build=`  | Atlas lookups: `atlas` (region list), `texture` (not an atlas) or `missing`.                                                   |
-| `GET`  | `/api/v1/atlas/:fdid/regions` | Region names only (lightweight).                                                                                               |
-| `GET`  | `/api/v1/atlas/:fdid/export`  | Whole-atlas Lua export.                                                                                                        |
-| `GET`  | `/api/v1/search?q=`           | Community listfile search (needs `npm run fetch:listfile`).                                                                    |
-| `POST` | `/api/v1/scan`                | Addon-code scanner: `{ code, sheet? }` → normalized region entries (px rects, exactness, matched atlas member, `SetTexCoord`). |
+| Method | Path                                 | Description                                                                                                                         |
+| ------ | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`  | `/api/v1/health`                     | Liveness + version.                                                                                                                 |
+| `GET`  | `/api/v1/builds`                     | Selectable game builds (offline fallback list + live merge).                                                                        |
+| `GET`  | `/api/v1/files/:fdid`                | File metadata for a FileDataID.                                                                                                     |
+| `GET`  | `/api/v1/files/:fdid/blp`            | Download the raw `.blp` file.                                                                                                       |
+| `POST` | `/api/v1/blp/decode`                 | Decode uploaded `.blp` bytes; returns a cached `pngUrl`.                                                                            |
+| `GET`  | `/api/v1/atlas/:fdid?build=`         | Atlas lookups: `atlas` (region list), `texture` (not an atlas) or `missing`.                                                        |
+| `GET`  | `/api/v1/atlas/:fdid/regions`        | Region names only (lightweight).                                                                                                    |
+| `GET`  | `/api/v1/atlas/:fdid/export`         | Whole-atlas Lua export.                                                                                                             |
+| `GET`  | `/api/v1/search?q=[&limit=][&wait=]` | Community listfile search. Read-only: never downloads (see below); `wait` is **seconds** (0–25) to ride out an in-flight download.  |
+| `POST` | `/api/v1/listfile/fetch`             | Start (or reuse) the listfile download. `{ wait?: 0–25 }`, default `0` = acknowledge now. **The only route that writes the index.** |
+| `POST` | `/api/v1/scan`                       | Addon-code scanner: `{ code, sheet? }` → normalized region entries (px rects, exactness, matched atlas member, `SetTexCoord`).      |
 
 Interactive docs: `/documentation` (Swagger UI).
 
@@ -154,9 +159,52 @@ curl -s "http://127.0.0.1:8000/api/v1/atlas/878877/export"
 
 The request/response contract is the single source of truth in `src/shared/schemas.ts`; `/documentation` renders it live. Cache under `cache/` makes repeated agent runs fast and offline for previously fetched data.
 
+#### Name search on a fresh install (the index asks before it downloads)
+
+`cache/listfile.csv` is a ~146 MB index of every texture name in the game. It is not in the
+repo, so on a first install it is always missing — and an MCP agent has no shell to fetch it.
+The app can build it, but it will not do so behind your back: **no request ever triggers a
+download.** `GET /api/v1/search` and `GET /api/v1/health` are side-effect free by
+construction; they only read what is already on disk.
+
+To get the index, you approve the download once:
+
+- In an agent session, call the `atlas_prepare_index` MCP tool. It opens a confirmation prompt
+  naming the size, the source, and where the file lands. Only an explicit accept downloads;
+  declining, cancelling, or a client that cannot be asked means no download, and the answer
+  tells you to run `npm run fetch:listfile` instead.
+- By hand: `npm run fetch:listfile`, or `curl -X POST localhost:8000/api/v1/listfile/fetch`.
+- Pre-seeded installs need nothing at all: copy a `cache/` directory from another machine and
+  search works offline.
+
+Once approved, the rest is mechanical and safe:
+
+- One download per process, written to a `.tmp` file and renamed into place, so an interrupted
+  run never leaves a corrupt index behind.
+- The download is pinned to the release tag that was current when it started, and that tag is
+  recorded next to the file (`cache/listfile.csv.meta.json`).
+- The server checks for a newer release every 7 hours (a ~14 KB metadata poll, never a
+  download) and reports `updateAvailable` when your copy is behind. Staleness is reported, not
+  silently fixed.
+- `GET /api/v1/health` reports real readiness under `capabilities.search` — `ready`, `indexing`,
+  `absent` or `error` — instead of a flat `"ok"` that hides a dead search.
+- `GET /api/v1/search` **never** returns 503 for a missing index. It returns `200` with
+  `status` and an actionable `detail`, so a client can retry rather than crash.
+- `?wait=<seconds>` (0–25) blocks just long enough to ride out a nearly-finished download. It is
+  never held open for the whole transfer, and giving up does not cancel it.
+
+Every other tool works while the index is missing. See ADR-020 in [docs/ADRs.md](docs/ADRs.md).
+
 ### MCP server (opencode / Claude Desktop)
 
-The same v1 surface ships as a Model Context Protocol server (`src/mcp/`) with one read-only tool per endpoint, all prefixed `atlas_`: `atlas_server_status`, `atlas_list_builds`, `atlas_search`, `atlas_file_info`, `atlas_get`, `atlas_regions`, `atlas_export`, `atlas_scan`. Addons can inspect WoW texture atlases, resolve FileDataIDs by name, export Lua and scan addon code directly from the assistant.
+The same v1 surface ships as a Model Context Protocol server (`src/mcp/`) with one tool per endpoint, all prefixed `atlas_`: `atlas_server_status`, `atlas_list_builds`, `atlas_search`, `atlas_file_info`, `atlas_get`, `atlas_regions`, `atlas_export`, `atlas_scan`, and `atlas_prepare_index`. Addons can inspect WoW texture atlases, resolve FileDataIDs by name, export Lua and scan addon code directly from the assistant.
+
+All of them are read-only except `atlas_prepare_index`, which asks you before downloading the
+name index. On a cold install `atlas_server_status` says **DEGRADED** with
+`capabilities.search.status: "absent"`, and `atlas_search` returns an error rather than an empty
+hit list — an empty list would otherwise read as "no such texture". `atlas_search` then tells you
+to run `atlas_prepare_index`, which prompts for confirmation; or pass `wait: 25` to `atlas_search`
+when a download is already in flight.
 
 **Prerequisites — do this once:**
 

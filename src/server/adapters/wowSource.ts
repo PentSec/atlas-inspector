@@ -8,17 +8,17 @@
  *  - after maxRetries it resolves to `null` (caller treats as "upstream down")
  */
 export interface WowFileSource {
-  /** Low-level GET returning raw bytes with retry/backoff. */
-  getFile(url: string): Promise<Buffer | null>;
+    /** Low-level GET returning raw bytes with retry/backoff. */
+    getFile(url: string): Promise<Buffer | null>;
 }
 
 /** Anything thrown while talking to the upstream. */
 export class UpstreamConnectionError extends Error {
-  readonly causeValue?: unknown;
+    readonly causeValue?: unknown;
 
-  constructor(message: string, cause?: unknown) {
-    super(message);
-    this.name = "UpstreamConnectionError";
-    this.causeValue = cause;
-  }
+    constructor(message: string, cause?: unknown) {
+        super(message);
+        this.name = "UpstreamConnectionError";
+        this.causeValue = cause;
+    }
 }

@@ -10,20 +10,20 @@ import type { Db2Row } from "./repo.js";
 
 /** Parse a DB2 CSV table dump into rows keyed by header name. */
 export function parseDb2Csv(text: string): Db2Row[] {
-  const records = parse(text, {
-    columns: true,
-    bom: true,
-    skip_empty_lines: true,
-    relax_column_count: true,
-    relax_quotes: false,
-  }) as Record<string, unknown>[];
-  const out: Db2Row[] = [];
-  for (const rec of records) {
-    const row: Db2Row = {};
-    for (const [k, v] of Object.entries(rec)) {
-      row[k] = v === undefined || v === null ? "" : String(v);
+    const records = parse(text, {
+        columns: true,
+        bom: true,
+        skip_empty_lines: true,
+        relax_column_count: true,
+        relax_quotes: false,
+    }) as Record<string, unknown>[];
+    const out: Db2Row[] = [];
+    for (const rec of records) {
+        const row: Db2Row = {};
+        for (const [k, v] of Object.entries(rec)) {
+            row[k] = v === undefined || v === null ? "" : String(v);
+        }
+        out.push(row);
     }
-    out.push(row);
-  }
-  return out;
+    return out;
 }

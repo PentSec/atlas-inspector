@@ -9,18 +9,18 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 function findPackageVersion(dir: string): string | undefined {
-  for (let d = dir; d.length > 1; d = path.dirname(d)) {
-    try {
-      const pkg = JSON.parse(readFileSync(path.join(d, "package.json"), "utf8")) as {
-        name?: string;
-        version?: string;
-      };
-      if (pkg.name === "atlas-inspector") return pkg.version;
-    } catch {
-      // keep climbing
+    for (let d = dir; d.length > 1; d = path.dirname(d)) {
+        try {
+            const pkg = JSON.parse(readFileSync(path.join(d, "package.json"), "utf8")) as {
+                name?: string;
+                version?: string;
+            };
+            if (pkg.name === "atlas-inspector") return pkg.version;
+        } catch {
+            // keep climbing
+        }
     }
-  }
-  return undefined;
+    return undefined;
 }
 
 export const version: string = findPackageVersion(import.meta.dirname) ?? "0.0.0-dev";

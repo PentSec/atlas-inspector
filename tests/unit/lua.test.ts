@@ -152,7 +152,9 @@ describe("lua styles", () => {
     });
 
     it("emits pixel-exact SetTexCoord lines", () => {
-        expect(texCoordLinePx(2, 10, 4, 12, 256, 128)).toBe(":SetTexCoord(2/256, 10/256, 4/128, 12/128)");
+        expect(texCoordLinePx(2, 10, 4, 12, 256, 128)).toBe(
+            ":SetTexCoord(2/256, 10/256, 4/128, 12/128)",
+        );
     });
 
     it("emits raw SetTexCoord from a scanned region (no reordering)", () => {

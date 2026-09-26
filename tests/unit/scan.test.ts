@@ -49,7 +49,16 @@ describe("scan", () => {
                 "'Interface\\Buttons\\btn', 128, 64, 0, 0.5, 0.25, 0.75",
                 new Map(),
             );
-            expect(e).toMatchObject({ texture: "Interface\\Buttons\\btn", dw: 128, dh: 64, u0: 0, u1: 0.5, v0: 0.25, v1: 0.75, m: null });
+            expect(e).toMatchObject({
+                texture: "Interface\\Buttons\\btn",
+                dw: 128,
+                dh: 64,
+                u0: 0,
+                u1: 0.5,
+                v0: 0.25,
+                v1: 0.75,
+                m: null,
+            });
         });
 
         it("parses keyed entries with left/right/top/bottom", () => {
@@ -65,18 +74,37 @@ describe("scan", () => {
                 "file = 'Y', coords = { 0, 0.5, 0, 0.5 }, width = 32, height = 32",
                 new Map(),
             );
-            expect(e).toMatchObject({ texture: "Y", u0: 0, u1: 0.5, v0: 0, v1: 0.5, dw: 32, dh: 32 });
+            expect(e).toMatchObject({
+                texture: "Y",
+                u0: 0,
+                u1: 0.5,
+                v0: 0,
+                v1: 0.5,
+                dw: 32,
+                dh: 32,
+            });
         });
 
         it("supports a/b fractions in coords", () => {
-            const e = parseTableEntry("'Interface\\Buttons\\btn', 2/256, 10/256, 4/128, 12/128", new Map());
+            const e = parseTableEntry(
+                "'Interface\\Buttons\\btn', 2/256, 10/256, 4/128, 12/128",
+                new Map(),
+            );
             expect(e).toMatchObject({ u0: 2 / 256, u1: 10 / 256, v0: 4 / 128, v1: 12 / 128 });
         });
 
         it("supports symbol resolution for coords", () => {
-            const syms = new Map<string, string>([["L", "0.25"], ["TM", "0.5"]]);
+            const syms = new Map<string, string>([
+                ["L", "0.25"],
+                ["TM", "0.5"],
+            ]);
             const e = parseTableEntry("'Interface\\Buttons\\btn', L, 0.5, TM, 1", syms);
-            expect(e).toMatchObject({ texture: "Interface\\Buttons\\btn", u0: 0.25, v0: 0.5, v1: 1 });
+            expect(e).toMatchObject({
+                texture: "Interface\\Buttons\\btn",
+                u0: 0.25,
+                v0: 0.5,
+                v1: 1,
+            });
         });
     });
 
@@ -84,11 +112,16 @@ describe("scan", () => {
         it("collects inline SetTexCoord with a resolved texture symbol", () => {
             const code = [
                 'local TEX = "Interface\\Buttons\\foo"',
-                'TEX:SetTexCoord(0, 0.5, 0, 0.5)',
+                "TEX:SetTexCoord(0, 0.5, 0, 0.5)",
             ].join("\n");
             const out = scanLua(code);
             expect(out).toHaveLength(1);
-            expect(out[0]).toMatchObject({ source: "stc", key: "TEX", texture: "Interface\\Buttons\\foo", line: 2 });
+            expect(out[0]).toMatchObject({
+                source: "stc",
+                key: "TEX",
+                texture: "Interface\\Buttons\\foo",
+                line: 2,
+            });
         });
 
         it("skips commented-out blocks and preserves line numbers", () => {
@@ -147,7 +180,8 @@ describe("scan", () => {
         });
 
         it("skips blocks without a recognizable texture path", () => {
-            const code = '<Texture name="X" file="Interface\\Good"><TexCoords left="0" right="1" top="0" bottom="1"/></Texture>' +
+            const code =
+                '<Texture name="X" file="Interface\\Good"><TexCoords left="0" right="1" top="0" bottom="1"/></Texture>' +
                 '<Texture name="Y"><TexCoords left="0" right="1" top="0" bottom="1"/></Texture>';
             const out = scanXml(code);
             expect(out).toHaveLength(1);
@@ -157,7 +191,9 @@ describe("scan", () => {
 
     describe("scanCode dialect detection", () => {
         it("routes XML-looking input to the XML scanner", () => {
-            const out = scanCode("<Texture file=\"Interface\\a\"><TexCoords left=\"0\" right=\"0.5\" top=\"0\" bottom=\"0.5\"/></Texture>");
+            const out = scanCode(
+                '<Texture file="Interface\\a"><TexCoords left="0" right="0.5" top="0" bottom="0.5"/></Texture>',
+            );
             expect(out[0]!.source).toBe("xml");
         });
 
@@ -175,7 +211,12 @@ describe("scan", () => {
         });
 
         it("returns an ordered rect for flipped input", () => {
-            expect(orderedRect({ u0: 0.75, u1: 0.25, v0: 0.5, v1: 0 })).toEqual({ u0: 0.25, u1: 0.75, v0: 0, v1: 0.5 });
+            expect(orderedRect({ u0: 0.75, u1: 0.25, v0: 0.5, v1: 0 })).toEqual({
+                u0: 0.25,
+                u1: 0.75,
+                v0: 0,
+                v1: 0.5,
+            });
         });
 
         it("converts normalized to pixel rect on a sheet", () => {
@@ -192,9 +233,19 @@ describe("scan", () => {
                 { left: 0, top: 0, right: 32, bottom: 32 },
                 { left: 64, top: 64, right: 128, bottom: 128 },
             ];
-            const hit = matchMemberRect({ u0: 0.24, u1: 0.27, v0: 0.24, v1: 0.27 }, 256, 256, members);
+            const hit = matchMemberRect(
+                { u0: 0.24, u1: 0.27, v0: 0.24, v1: 0.27 },
+                256,
+                256,
+                members,
+            );
             expect(hit).toBe(1);
-            const miss = matchMemberRect({ u0: 0.9, u1: 0.95, v0: 0.9, v1: 0.95 }, 256, 256, members);
+            const miss = matchMemberRect(
+                { u0: 0.9, u1: 0.95, v0: 0.9, v1: 0.95 },
+                256,
+                256,
+                members,
+            );
             expect(miss).toBe(-1);
         });
     });

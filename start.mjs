@@ -27,58 +27,63 @@ const env = { ...process.env, PORT: process.env.PORT || "8000" };
 const args = process.argv.slice(2).filter((a) => a !== "node");
 
 function log(msg) {
-  // eslint-disable-next-line no-console
-  console.log(`[atlas-inspector] ${msg}`);
+    // eslint-disable-next-line no-console
+    console.log(`[atlas-inspector] ${msg}`);
 }
 
 function run(cmd, cmdArgs, opts = {}) {
-  const child = spawn(cmd, cmdArgs, {
-    cwd: root,
-    env,
-    stdio: "inherit",
-    shell: isWin,
-    ...opts,
-  });
-  child.on("error", (err) => {
-    // eslint-disable-next-line no-console
-    console.error(`[atlas-inspector] failed to start: ${err.message}`);
-    process.exit(1);
-  });
-  return child;
+    const child = spawn(cmd, cmdArgs, {
+        cwd: root,
+        env,
+        stdio: "inherit",
+        shell: isWin,
+        ...opts,
+    });
+    child.on("error", (err) => {
+        // eslint-disable-next-line no-console
+        console.error(`[atlas-inspector] failed to start: ${err.message}`);
+        process.exit(1);
+    });
+    return child;
 }
 
 function buildOnce() {
-  log("build not found — running `npm run build` once…");
-  const r = spawnSync(NPM, ["run", "build"], { cwd: root, env, stdio: "inherit", shell: isWin });
-  if (r.status !== 0 || !existsSync(DIST_ENTRY)) {
-    // eslint-disable-next-line no-console
-    console.error(
-      "[atlas-inspector] build failed and no compiled server was produced.\n" +
-        "  Install dependencies first:  npm install\n" +
-        "  Then retry:                  node start.mjs " + (args.join(" ") || ""),
-    );
-    process.exit(r.status ?? 1);
-  }
-  return true;
+    log("build not found — running `npm run build` once…");
+    const r = spawnSync(NPM, ["run", "build"], { cwd: root, env, stdio: "inherit", shell: isWin });
+    if (r.status !== 0 || !existsSync(DIST_ENTRY)) {
+        // eslint-disable-next-line no-console
+        console.error(
+            "[atlas-inspector] build failed and no compiled server was produced.\n" +
+                "  Install dependencies first:  npm install\n" +
+                "  Then retry:                  node start.mjs " +
+                (args.join(" ") || ""),
+        );
+        process.exit(r.status ?? 1);
+    }
+    return true;
 }
 
 function isTsxAvailable() {
-  return existsSync(path.join(root, "node_modules", "tsx", "dist", "cli.mjs"));
+    return existsSync(path.join(root, "node_modules", "tsx", "dist", "cli.mjs"));
 }
 
 if (args.includes("--dev")) {
-  if (!isTsxAvailable()) {
-    // eslint-disable-next-line no-console
-    console.error("[atlas-inspector] --dev needs tsx (install with `npm install`).");
-    process.exit(1);
-  }
-  log("dev mode — running from source (change files and the server restarts)");
-  run(process.execPath, [path.join(root, "node_modules", "tsx", "dist", "cli.mjs"), "watch", SRC_ENTRY]);
+    if (!isTsxAvailable()) {
+        // eslint-disable-next-line no-console
+        console.error("[atlas-inspector] --dev needs tsx (install with `npm install`).");
+        process.exit(1);
+    }
+    log("dev mode — running from source (change files and the server restarts)");
+    run(process.execPath, [
+        path.join(root, "node_modules", "tsx", "dist", "cli.mjs"),
+        "watch",
+        SRC_ENTRY,
+    ]);
 } else if (existsSync(DIST_ENTRY) || buildOnce()) {
-  log(`serving on http://${env.HOST || "127.0.0.1"}:${env.PORT}  (API docs at /documentation)`);
-  run(process.execPath, ["--env-file-if-exists=.env", DIST_ENTRY]);
+    log(`serving on http://${env.HOST || "127.0.0.1"}:${env.PORT}  (API docs at /documentation)`);
+    run(process.execPath, ["--env-file-if-exists=.env", DIST_ENTRY]);
 } else {
-  // eslint-disable-next-line no-console
-  console.error("[atlas-inspector] nothing to run. Install deps (`npm install`) and retry.");
-  process.exit(1);
+    // eslint-disable-next-line no-console
+    console.error("[atlas-inspector] nothing to run. Install deps (`npm install`) and retry.");
+    process.exit(1);
 }
