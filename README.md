@@ -1,5 +1,7 @@
 # Atlas Inspector
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D5R327PO99)
+
 Inspect WoW texture atlases (`UI/*.xml` / `.blp` sheets) by **FileDataID**: visualize region rectangles, group them by prefix, search names, and export ready-to-paste Lua region tables for your addons.
 
 Ships as a local web app: a **Fastify + TypeScript API** (Node.js) with a **strict TypeScript, dependency-light client** (no framework — a vanilla Vite build on a single canvas). Everything runs on your machine; atlas data is fetched on demand from [wago.tools](https://wago.tools).
@@ -476,6 +478,10 @@ npm run fetch:blp-fixtures # grab sample .blp files into tests/fixtures/
 - Atlas previews are reprojected PNGs decoded from `.blp`; very large sheets are scaled to fit the browser canvas.
 - **Local `.blp` islands have no names.** A BLP file stores pixels, not region identifiers, so `atlas_blp_islands` returns bounding boxes only. Real names need a FileDataID (`atlas_get`) or a hand-written member list fed to `atlas_scan`.
 - The legacy v0 endpoints exist for backward compatibility only — new work should target `/api/v1` and be validated through the shared schemas.
+
+## Support me <3
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/D5R327PO99)
 
 ## License
 
