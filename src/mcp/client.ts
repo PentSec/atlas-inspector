@@ -7,6 +7,9 @@ import type { z } from "zod";
 import {
     AtlasRegionsResponseSchema,
     AtlasResultSchema,
+    BlpAlphaResponseSchema,
+    BlpIslandsResponseSchema,
+    BlpTcResponseSchema,
     BuildsResponseSchema,
     FileInfoSchema,
     HealthSchema,
@@ -16,7 +19,7 @@ import {
     SearchCapabilitySchema,
     SearchResultSchema,
 } from "../shared/schemas.js";
-import type { ScanRequestSchema } from "../shared/schemas.js";
+import type { BlpTcRequest, ScanRequestSchema } from "../shared/schemas.js";
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -64,6 +67,8 @@ interface RequestOptions {
     path: string;
     query?: Record<string, string>;
     json?: unknown;
+    /** Raw body (BLP bytes); sent as application/octet-stream. */
+    body?: Buffer;
     text?: boolean;
     /** Overrides the baseline timeout; used by `search` to honour `wait`. */
     timeoutMs?: number;
@@ -145,6 +150,32 @@ export class AtlasApiClient {
         );
     }
 
+    async blpIslands(blp: Buffer, opts?: { gap?: number; minpx?: number }) {
+        const query: Record<string, string> = {};
+        if (opts?.gap !== undefined) query.gap = String(opts.gap);
+        if (opts?.minpx !== undefined) query.minpx = String(opts.minpx);
+        return BlpIslandsResponseSchema.parse(
+            await this.#request({
+                path: "/blp/islands",
+                method: "POST",
+                body: blp,
+                query: Object.keys(query).length ? query : undefined,
+            }),
+        );
+    }
+
+    async blpAlpha(blp: Buffer) {
+        return BlpAlphaResponseSchema.parse(
+            await this.#request({ path: "/blp/alpha", method: "POST", body: blp }),
+        );
+    }
+
+    async blpTc(body: BlpTcRequest) {
+        return BlpTcResponseSchema.parse(
+            await this.#request({ path: "/blp/tc", method: "POST", json: body }),
+        );
+    }
+
     /**
      * Start (or join) the authorized listfile download.
      *
@@ -178,6 +209,9 @@ export class AtlasApiClient {
         if (opts.json !== undefined) {
             init.headers = { ...init.headers, "content-type": "application/json" };
             init.body = JSON.stringify(opts.json);
+        } else if (opts.body !== undefined) {
+            init.headers = { ...init.headers, "content-type": "application/octet-stream" };
+            init.body = new Uint8Array(opts.body);
         }
 
         let res: Response;

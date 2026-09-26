@@ -13,7 +13,9 @@ import { FileCache } from "../../src/server/lib/cache.js";
 import { DecodeService } from "../../src/server/services/decodeService.js";
 import type { WowFileSource } from "../../src/server/adapters/wowSource.js";
 import type { BlpDecoder, DecodedBlp } from "../../src/server/adapters/blpDecoder.js";
+import { pngSize } from "../../src/server/adapters/blpDecoder.js";
 import { ListfileIndex } from "../../src/server/services/search.js";
+import { islandSheetPng } from "../helpers/rgbaPng.js";
 
 /** Minimal fake PNG (89 50 4E 47 + IHDR with 4x4). */
 const FAKE_PNG = Buffer.concat([
@@ -29,6 +31,31 @@ class FakeDecoder implements BlpDecoder {
         if (this.fail) throw new Error("unsupported");
         return { width: 4, height: 4, png: FAKE_PNG };
     }
+}
+
+class PixelDecoder implements BlpDecoder {
+    fail = false;
+    png = islandSheetPng();
+    async decodeToPng(): Promise<DecodedBlp> {
+        if (this.fail) throw new Error("unsupported");
+        const { w, h } = pngSize(this.png);
+        return { width: w, height: h, png: this.png };
+    }
+}
+
+async function makeAnalysisApp(decoder: BlpDecoder, maxBytes = config.decode.maxBytes) {
+    return makeApp({
+        decode: new DecodeService({
+            decoder,
+            decodeCache: new FileCache({
+                dir: path.join(tmp, `decode-analysis-${Date.now()}-${Math.random()}`),
+                ttlMs: 60_000,
+                memoryByteLimit: 1024,
+                logger,
+            }),
+            maxBytes,
+        }),
+    });
 }
 
 /** Mock upstream answering wago.tools paths with canned data. */
@@ -187,6 +214,155 @@ describe("/api/v1", () => {
         expect(body.kind).toBe("ok");
         expect(body.width).toBe(4);
         expect(body.pngUrl).toMatch(/^\/api\/cache\/decode_[a-f0-9]+\.png$/);
+    });
+
+    it("blp/islands returns opaque components from decoded alpha", async () => {
+        app = await makeAnalysisApp(new PixelDecoder());
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/islands?gap=0&minpx=4",
+            headers: { "content-type": "application/octet-stream" },
+            payload: Buffer.from("BLP2-not-real-but-decoder-is-fake"),
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({
+            width: 8,
+            height: 8,
+            islands: [{ x: 2, y: 2, w: 4, h: 4, npx: 16 }],
+        });
+    });
+
+    it("blp/islands returns 422 for an undecodable BLP", async () => {
+        const decoder = new PixelDecoder();
+        decoder.fail = true;
+        app = await makeAnalysisApp(decoder);
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/islands",
+            headers: { "content-type": "application/octet-stream" },
+            payload: Buffer.from("not a blp"),
+        });
+        expect(res.statusCode).toBe(422);
+        expect(res.json().title).toBe("Unprocessable Content");
+    });
+
+    it("blp/islands returns 400 when the body is not raw bytes", async () => {
+        app = await makeAnalysisApp(new PixelDecoder());
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/islands",
+            headers: { "content-type": "application/json" },
+            payload: { nope: true },
+        });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().title).toBe("Bad Request");
+    });
+
+    it("blp/islands returns 413 when the body exceeds the decode limit", async () => {
+        app = await makeAnalysisApp(new PixelDecoder(), 8);
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/islands",
+            headers: { "content-type": "application/octet-stream" },
+            payload: Buffer.alloc(32, 1),
+        });
+        expect(res.statusCode).toBe(413);
+        expect(res.json().title).toBe("Payload Too Large");
+    });
+
+    it("blp/alpha returns opaque insets", async () => {
+        app = await makeAnalysisApp(new PixelDecoder());
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/alpha",
+            headers: { "content-type": "application/octet-stream" },
+            payload: Buffer.from("BLP2-fake"),
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({
+            width: 8,
+            height: 8,
+            top: 2,
+            right: 2,
+            bottom: 2,
+            left: 2,
+        });
+    });
+
+    it("blp/alpha returns 422 for an undecodable BLP", async () => {
+        const decoder = new PixelDecoder();
+        decoder.fail = true;
+        app = await makeAnalysisApp(decoder);
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/alpha",
+            headers: { "content-type": "application/octet-stream" },
+            payload: Buffer.from("not a blp"),
+        });
+        expect(res.statusCode).toBe(422);
+    });
+
+    it("blp/tc converts a pixel rect and a normalized rect", async () => {
+        app = await makeApp();
+        const px = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/tc",
+            headers: { "content-type": "application/json" },
+            payload: { width: 256, height: 128, px: { x: 64, y: 0, w: 32, h: 32 } },
+        });
+        expect(px.statusCode).toBe(200);
+        expect(px.json()).toMatchObject({
+            px: { x: 64, y: 0, w: 32, h: 32 },
+            stc: ":SetTexCoord(64/256, 96/256, 0/128, 32/128)",
+        });
+
+        const tc = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/tc",
+            headers: { "content-type": "application/json" },
+            payload: {
+                width: 256,
+                height: 128,
+                tc: { left: 64 / 256, right: 96 / 256, top: 0, bottom: 32 / 128 },
+            },
+        });
+        expect(tc.statusCode).toBe(200);
+        expect(tc.json().px).toEqual({ x: 64, y: 0, w: 32, h: 32 });
+    });
+
+    it("blp/tc returns 400 when both or neither input is given", async () => {
+        app = await makeApp();
+        const neither = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/tc",
+            headers: { "content-type": "application/json" },
+            payload: { width: 16, height: 16 },
+        });
+        expect(neither.statusCode).toBe(400);
+
+        const both = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/tc",
+            headers: { "content-type": "application/json" },
+            payload: {
+                width: 16,
+                height: 16,
+                px: { x: 0, y: 0, w: 1, h: 1 },
+                tc: { left: 0, right: 1, top: 0, bottom: 1 },
+            },
+        });
+        expect(both.statusCode).toBe(400);
+    });
+
+    it("blp/tc returns 422 when values are out of range", async () => {
+        app = await makeApp();
+        const res = await app.inject({
+            method: "POST",
+            url: "/api/v1/blp/tc",
+            headers: { "content-type": "application/json" },
+            payload: { width: 16, height: 16, px: { x: 14, y: 0, w: 8, h: 1 } },
+        });
+        expect(res.statusCode).toBe(422);
     });
 
     it("never downloads on a cold install: search and health are side-effect free", async () => {

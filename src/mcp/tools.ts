@@ -8,6 +8,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import {
+    BlpAlphaResponseSchema,
+    BlpIslandsResponseSchema,
+    BlpTcResponseSchema,
     HealthSchema,
     ScanRequestSchema,
     SEARCH_WAIT_MAX_SECONDS,
@@ -15,6 +18,7 @@ import {
     SearchResultSchema,
 } from "../shared/schemas.js";
 import type { Health, SearchCapability, SearchStatus } from "../shared/types.js";
+import { BlpInputError, resolveBlpBytes } from "./blpInput.js";
 import { AtlasApiError } from "./client.js";
 import type { AtlasApiClient } from "./client.js";
 
@@ -69,7 +73,9 @@ function fail(error: unknown): CallToolResult {
     const message =
         error instanceof AtlasApiError
             ? `Atlas Inspector error (${error.status}): ${error.message}${error.status === 0 ? APP_HINT : ""}`
-            : `Unexpected error: ${error instanceof Error ? error.message : String(error)}`;
+            : error instanceof BlpInputError
+              ? `Invalid \`blp\` input: ${error.message}`
+              : `Unexpected error: ${error instanceof Error ? error.message : String(error)}`;
     return { isError: true, content: [{ type: "text", text: message }] };
 }
 
@@ -691,6 +697,148 @@ Example: scan addon code containing atlas["Foo"] = { "Interface\\Buttons\\Foo", 
                     : "";
                 return ok(
                     `${data.entries.length} region entry(ies) found${sheetText}${bullets(lines)}`,
+                    data,
+                );
+            } catch (error) {
+                return fail(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        "atlas_blp_islands",
+        {
+            title: "Detect Texture Islands",
+            description: `Give it a .blp file and get back every opaque island (connected alpha component) as a
+pixel bounding box. No FileDataID needed — works on any local .blp file.
+
+Pass \`blp\` as a filesystem path ("/home/you/textures/Atlas.blp") or as base64 bytes; a
+path is read from disk for you, so you never have to encode it yourself. Both BLP1 and BLP2
+are supported — a bad input is reported as an invalid-path/bad-base64 error, not as an
+unsupported BLP version.
+
+Returns { width, height, islands: [{ x, y, w, h, npx }] } sorted top-to-left.
+Use the pixel rects directly with atlas_blp_tc to get SetTexCoord values, or pass them
+to atlas_scan's sheet.members after computing right = x+w and bottom = y+h.
+
+gap  (default 1): pixel gap between runs before they are considered separate islands.
+minpx (default 16): ignore islands with fewer opaque pixels (removes 1-px noise).`,
+            inputSchema: z
+                .object({
+                    blp: z
+                        .string()
+                        .describe(
+                            "The .blp file: either a filesystem path (absolute, relative, or file:// URL) " +
+                                "or base64-encoded raw bytes. A path is read from disk and encoded for you.",
+                        ),
+                    gap: z.number().int().min(0).max(32).default(1).optional(),
+                    minpx: z.number().int().min(1).default(16).optional(),
+                })
+                .strict(),
+            outputSchema: BlpIslandsResponseSchema,
+            annotations: { ...ReadOnly, openWorldHint: false },
+        },
+        async ({ blp, gap, minpx }) => {
+            try {
+                const data = await client.blpIslands(resolveBlpBytes(blp), { gap, minpx });
+                const lines = data.islands.map(
+                    (isle, i) =>
+                        `#${i + 1}: ${isle.w}×${isle.h} at (${isle.x},${isle.y}) — ${isle.npx}px`,
+                );
+                return ok(
+                    `${data.width}×${data.height}, ${data.islands.length} island(s)${bullets(lines)}`,
+                    data,
+                );
+            } catch (error) {
+                return fail(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        "atlas_blp_alpha",
+        {
+            title: "Measure Alpha Margins",
+            description: `Give it a .blp file and get the first opaque row/column on each side of the sheet —
+the minimum margin before any content starts. Useful for measuring nine-slice borders
+without opening the file in an image editor.
+
+Pass \`blp\` as a filesystem path or as base64 bytes; a path is read from disk for you.
+Both BLP1 and BLP2 are supported.
+
+Returns { width, height, top, right, bottom, left } where each value is the 0-based
+pixel index of the first opaque content on that side (0 = content touches the edge,
+equal to dimension = fully transparent on that side).`,
+            inputSchema: z
+                .object({
+                    blp: z
+                        .string()
+                        .describe(
+                            "The .blp file: either a filesystem path (absolute, relative, or file:// URL) " +
+                                "or base64-encoded raw bytes. A path is read from disk and encoded for you.",
+                        ),
+                })
+                .strict(),
+            outputSchema: BlpAlphaResponseSchema,
+            annotations: { ...ReadOnly, openWorldHint: false },
+        },
+        async ({ blp }) => {
+            try {
+                const data = await client.blpAlpha(resolveBlpBytes(blp));
+                return ok(
+                    `${data.width}×${data.height} — margins top:${data.top} right:${data.right} bottom:${data.bottom} left:${data.left}`,
+                    data,
+                );
+            } catch (error) {
+                return fail(error);
+            }
+        },
+    );
+
+    server.registerTool(
+        "atlas_blp_tc",
+        {
+            title: "Convert Texture Coordinates",
+            description: `Convert between pixel rects and SetTexCoord [0,1] coordinates for a sheet of known size.
+No BLP file required — only the sheet dimensions and either a pixel rect (x, y, w, h) or
+normalized coords (left, right, top, bottom).
+
+Returns both representations plus a ready-to-paste Lua :SetTexCoord(...) call using
+integer-over-dimension fractions (e.g. :SetTexCoord(64/256, 96/256, 0/128, 32/128)).`,
+            inputSchema: z
+                .object({
+                    width: z.number().int().positive(),
+                    height: z.number().int().positive(),
+                    px: z
+                        .object({
+                            x: z.number(),
+                            y: z.number(),
+                            w: z.number(),
+                            h: z.number(),
+                        })
+                        .optional(),
+                    tc: z
+                        .object({
+                            left: z.number(),
+                            right: z.number(),
+                            top: z.number(),
+                            bottom: z.number(),
+                        })
+                        .optional(),
+                })
+                .strict(),
+            outputSchema: BlpTcResponseSchema,
+            annotations: { ...ReadOnly, openWorldHint: false },
+        },
+        async ({ width, height, px, tc }) => {
+            if ((px !== undefined) === (tc !== undefined)) {
+                return fail(new Error("Provide exactly one of px or tc."));
+            }
+            try {
+                const data = await client.blpTc({ width, height, px, tc });
+                const { px: p, tc: n, stc } = data;
+                return ok(
+                    `px (${p.x},${p.y} ${p.w}×${p.h}) → tc (${n.left.toFixed(4)},${n.right.toFixed(4)},${n.top.toFixed(4)},${n.bottom.toFixed(4)}) — ${stc}`,
                     data,
                 );
             } catch (error) {

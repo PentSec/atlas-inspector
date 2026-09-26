@@ -116,6 +116,80 @@ export const BlpDecodeResultSchema = z.object({
 });
 export type BlpDecodeResult = z.infer<typeof BlpDecodeResultSchema>;
 
+/** One connected opaque component on a decoded BLP sheet. */
+export const BlpIslandSchema = z.object({
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+    w: z.number().int().positive(),
+    h: z.number().int().positive(),
+    npx: z.number().int().positive(),
+});
+export type BlpIsland = z.infer<typeof BlpIslandSchema>;
+
+export const BlpIslandsResponseSchema = z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    islands: z.array(BlpIslandSchema),
+});
+export type BlpIslandsResponse = z.infer<typeof BlpIslandsResponseSchema>;
+
+export const BlpAlphaResponseSchema = z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    top: z.number().int().nonnegative(),
+    right: z.number().int().nonnegative(),
+    bottom: z.number().int().nonnegative(),
+    left: z.number().int().nonnegative(),
+});
+export type BlpAlphaResponse = z.infer<typeof BlpAlphaResponseSchema>;
+
+export const BlpTcRequestSchema = z
+    .object({
+        width: z.number().int().positive().describe("Sheet width in pixels."),
+        height: z.number().int().positive().describe("Sheet height in pixels."),
+        px: z
+            .object({
+                x: z.number().int().nonnegative(),
+                y: z.number().int().nonnegative(),
+                w: z.number().int().positive(),
+                h: z.number().int().positive(),
+            })
+            .optional()
+            .describe("Input as pixel rect (x, y, w, h)."),
+        tc: z
+            .object({
+                left: z.number().describe("SetTexCoord L (0..1)."),
+                right: z.number().describe("SetTexCoord R (0..1)."),
+                top: z.number().describe("SetTexCoord T (0..1)."),
+                bottom: z.number().describe("SetTexCoord B (0..1)."),
+            })
+            .optional()
+            .describe("Input as normalized coords (l, r, t, b)."),
+    })
+    .refine((d) => (d.px !== undefined) !== (d.tc !== undefined), {
+        message: "Provide exactly one of px or tc.",
+    });
+export type BlpTcRequest = z.infer<typeof BlpTcRequestSchema>;
+
+export const BlpTcResponseSchema = z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive(),
+    px: z.object({
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        h: z.number(),
+    }),
+    tc: z.object({
+        left: z.number(),
+        right: z.number(),
+        top: z.number(),
+        bottom: z.number(),
+    }),
+    stc: z.string(),
+});
+export type BlpTcResponse = z.infer<typeof BlpTcResponseSchema>;
+
 // ---------- file info ----------
 
 /** Shape of the wago.tools /api/info/{fdid} response (passthrough + known keys). */

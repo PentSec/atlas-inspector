@@ -8,7 +8,11 @@ import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import {
     AtlasOkSchema,
     AtlasRegionsResponseSchema,
+    BlpAlphaResponseSchema,
     BlpDecodeResultSchema,
+    BlpIslandsResponseSchema,
+    BlpTcRequestSchema,
+    BlpTcResponseSchema,
     BuildsResponseSchema,
     FileInfoSchema,
     HealthSchema,
@@ -25,7 +29,10 @@ import { scanCode } from "../../shared/scan.js";
 import { scanExact, scanRows } from "../../shared/scanView.js";
 import { normalizedRect } from "../../shared/coords.js";
 import { displaySizeFallback, luaExport } from "../../shared/lua.js";
-import { NotFoundError, UnprocessableError } from "../errors.js";
+import { findIslands } from "../../shared/islands.js";
+import { alphaMargins, alphaToBinary } from "../../shared/blpAlpha.js";
+import { BlpTcRangeError, convertBlpTc } from "../../shared/blpTc.js";
+import { BadRequestError, NotFoundError, UnprocessableError } from "../errors.js";
 import type { DecodeService } from "../services/decodeService.js";
 import type { ListfileIndex } from "../services/search.js";
 import type { Repo } from "../services/repo.js";
@@ -33,6 +40,21 @@ import type { Repo } from "../services/repo.js";
 const VersionParamsSchema = z.object({ fdid: z.coerce.number().int().positive() });
 const AtlasQuerySchema = z.object({ build: z.string().optional() });
 const BlpQuerySchema = z.object({ version: z.string().optional() });
+const BlpIslandsQuerySchema = z.object({
+    gap: z.coerce
+        .number()
+        .int()
+        .min(0)
+        .max(32)
+        .default(1)
+        .describe("Merge gap in pixels between runs (default 1)."),
+    minpx: z.coerce
+        .number()
+        .int()
+        .min(1)
+        .default(16)
+        .describe("Minimum opaque pixels for a component to be reported (default 16)."),
+});
 const SearchQuerySchema = z.object({
     q: z.string().min(1),
     limit: z.coerce.number().int().max(500).optional(),
@@ -128,6 +150,93 @@ export const v1Routes: FastifyPluginAsyncZod<V1RouteOptions> = async (fastify, o
             const body = req.body;
             if (!Buffer.isBuffer(body)) throw new UnprocessableError("body must be raw BLP bytes");
             return decode.decode(body);
+        },
+    );
+
+    fastify.post(
+        "/blp/islands",
+        {
+            schema: {
+                querystring: BlpIslandsQuerySchema,
+                response: {
+                    200: BlpIslandsResponseSchema,
+                    400: ProblemSchema,
+                    413: ProblemSchema,
+                    422: ProblemSchema,
+                },
+            },
+        },
+        async (req) => {
+            const raw = decode.assertRawBlp(req.body);
+            const { width, height, alpha } = await decode.alphaChannel(raw);
+            const islands = findIslands(
+                alphaToBinary(alpha, 128),
+                width,
+                height,
+                req.query.gap,
+                req.query.minpx,
+            );
+            return BlpIslandsResponseSchema.parse({ width, height, islands });
+        },
+    );
+
+    fastify.post(
+        "/blp/alpha",
+        {
+            schema: {
+                response: {
+                    200: BlpAlphaResponseSchema,
+                    400: ProblemSchema,
+                    413: ProblemSchema,
+                    422: ProblemSchema,
+                },
+            },
+        },
+        async (req) => {
+            const raw = decode.assertRawBlp(req.body);
+            const { width, height, alpha } = await decode.alphaChannel(raw);
+            const margins = alphaMargins(alpha, width, height, 1);
+            return BlpAlphaResponseSchema.parse({ width, height, ...margins });
+        },
+    );
+
+    fastify.post(
+        "/blp/tc",
+        {
+            schema: {
+                response: {
+                    200: BlpTcResponseSchema,
+                    400: ProblemSchema,
+                    422: ProblemSchema,
+                },
+            },
+        },
+        async (req) => {
+            const body = req.body;
+            let parsed: unknown = body;
+            if (Buffer.isBuffer(body)) {
+                try {
+                    parsed = JSON.parse(body.toString("utf8"));
+                } catch {
+                    throw new UnprocessableError("invalid JSON body");
+                }
+            }
+            const input = BlpTcRequestSchema.safeParse(parsed);
+            if (!input.success) {
+                const issue = input.error.issues[0];
+                const message = issue
+                    ? issue.message === "Provide exactly one of px or tc."
+                        ? issue.message
+                        : `invalid request: ${issue.path.join(".") || "body"} ${issue.message}`
+                    : "invalid request";
+                throw new BadRequestError(message);
+            }
+            try {
+                return BlpTcResponseSchema.parse(convertBlpTc(input.data));
+            } catch (err) {
+                if (err instanceof BlpTcRangeError) throw new UnprocessableError(err.message);
+                throw err;
+            }
         },
     );
 

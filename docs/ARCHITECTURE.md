@@ -53,8 +53,18 @@ Three code layers sharing one domain model, plus a pluggable BLP decoder.
 - **Alpha islands** (`src/shared/islands.ts`): connected-blob labeling with
   `findIslands(binary, w, h, gap, minpx)`; the define mode feeds it from an
   offscreen-canvas alpha readback (`autoDefineRegions`).
+- **BLP input** (`src/mcp/blpInput.ts`): the `atlas_blp_islands`/`atlas_blp_alpha`
+  `blp` argument is a filesystem path **or** base64, resolved and magic-validated
+  in the MCP process before any request. Path-vs-base64 is decided by the base64
+  alphabet (it has no `.`, so a dot proves it is a path), because an agent handed
+  a `.blp` should never have to base64 it by hand. Bad input fails with the
+  specific reason instead of a generic format complaint.
 - **API style**: JSON, errors as RFC 7807 problem+json, no stack traces on 5xx.
   OpenAPI is generated from the zod schemas.
+- **Error honesty**: a caught error keeps its cause. A decode failure names
+  whether the payload was not a BLP at all (wrong magic, e.g. a multipart
+  envelope) or was a valid BLP the codec could not expand. Collapsing both into
+  "unsupported format" turns a bad-request bug into a phantom feature-gap report.
 - **Client**: Pointer Events + AbortController, virtualized rows (tab/Focus-trap
   driven, same keyboard contract as the legacy UI). No Konva — native canvas.
 

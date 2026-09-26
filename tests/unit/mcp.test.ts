@@ -107,7 +107,7 @@ function stubFetch(routes: Record<string, unknown>): FetchLike {
     return async (input, _init) => {
         const url = input instanceof URL ? input : new URL(String(input));
         const key = url.pathname + url.search;
-        const payload = routes[key];
+        const payload = routes[key] ?? routes[url.pathname];
         if (payload === undefined) {
             throw new Error(`unexpected request: ${key}`);
         }
@@ -136,6 +136,9 @@ describe("atlas MCP server", () => {
             const names = list.tools.map((t) => t.name).sort();
             expect(names).toEqual(
                 [
+                    "atlas_blp_alpha",
+                    "atlas_blp_islands",
+                    "atlas_blp_tc",
                     "atlas_export",
                     "atlas_file_info",
                     "atlas_get",
@@ -199,6 +202,88 @@ describe("atlas MCP server", () => {
             expect(entries).toHaveLength(1);
             expect(entries[0]).toMatchObject({ matchedName: "Foo\\IconA", exact: true });
             expect(text(res)).toContain("matched=Foo\\IconA");
+        } finally {
+            await mcpClient.close();
+            await server.close();
+        }
+    });
+
+    it("atlas_blp_islands forwards raw bytes and summarizes islands", async () => {
+        const payload = {
+            width: 8,
+            height: 8,
+            islands: [{ x: 2, y: 2, w: 4, h: 4, npx: 16 }],
+        };
+        const { mcpClient, server } = await connectToolClient(
+            new AtlasApiClient(
+                "http://127.0.0.1:8000",
+                stubFetch({ "/api/v1/blp/islands": payload }),
+            ),
+        );
+        try {
+            const res = await mcpClient.callTool({
+                name: "atlas_blp_islands",
+                arguments: { blp: Buffer.from("BLP2").toString("base64"), gap: 1, minpx: 16 },
+            });
+            expect(res.structuredContent).toEqual(payload);
+            expect(text(res)).toContain("8×8, 1 island(s)");
+            expect(text(res)).toContain("#1: 4×4 at (2,2) — 16px");
+        } finally {
+            await mcpClient.close();
+            await server.close();
+        }
+    });
+
+    it("atlas_blp_alpha summarizes margins", async () => {
+        const payload = { width: 8, height: 8, top: 2, right: 2, bottom: 2, left: 2 };
+        const { mcpClient, server } = await connectToolClient(
+            new AtlasApiClient(
+                "http://127.0.0.1:8000",
+                stubFetch({ "/api/v1/blp/alpha": payload }),
+            ),
+        );
+        try {
+            const res = await mcpClient.callTool({
+                name: "atlas_blp_alpha",
+                arguments: { blp: Buffer.from("BLP2").toString("base64") },
+            });
+            expect(res.structuredContent).toEqual(payload);
+            expect(text(res)).toContain("margins top:2 right:2 bottom:2 left:2");
+        } finally {
+            await mcpClient.close();
+            await server.close();
+        }
+    });
+
+    it("atlas_blp_tc converts px and rejects both inputs", async () => {
+        const payload = {
+            width: 256,
+            height: 128,
+            px: { x: 64, y: 0, w: 32, h: 32 },
+            tc: { left: 0.25, right: 0.375, top: 0, bottom: 0.25 },
+            stc: ":SetTexCoord(64/256, 96/256, 0/128, 32/128)",
+        };
+        const { mcpClient, server } = await connectToolClient(
+            new AtlasApiClient("http://127.0.0.1:8000", stubFetch({ "/api/v1/blp/tc": payload })),
+        );
+        try {
+            const res = await mcpClient.callTool({
+                name: "atlas_blp_tc",
+                arguments: { width: 256, height: 128, px: { x: 64, y: 0, w: 32, h: 32 } },
+            });
+            expect(res.structuredContent).toEqual(payload);
+            expect(text(res)).toContain(payload.stc);
+            const bad = await mcpClient.callTool({
+                name: "atlas_blp_tc",
+                arguments: {
+                    width: 256,
+                    height: 128,
+                    px: { x: 0, y: 0, w: 1, h: 1 },
+                    tc: { left: 0, right: 1, top: 0, bottom: 1 },
+                },
+            });
+            expect(bad.isError).toBe(true);
+            expect(text(bad)).toContain("exactly one of px or tc");
         } finally {
             await mcpClient.close();
             await server.close();

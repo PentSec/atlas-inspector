@@ -127,7 +127,10 @@ All v1 endpoints are schematized (zod); failing lookups return [RFC 9457 Problem
 | `GET`  | `/api/v1/builds`                     | Selectable game builds (offline fallback list + live merge).                                                                        |
 | `GET`  | `/api/v1/files/:fdid`                | File metadata for a FileDataID.                                                                                                     |
 | `GET`  | `/api/v1/files/:fdid/blp`            | Download the raw `.blp` file.                                                                                                       |
-| `POST` | `/api/v1/blp/decode`                 | Decode uploaded `.blp` bytes; returns a cached `pngUrl`.                                                                            |
+| `POST` | `/api/v1/blp/decode`                 | Decode a raw `.blp` **body**; returns a cached `pngUrl`. Send raw bytes, not a multipart form.                                      |
+| `POST` | `/api/v1/blp/islands`                | Raw `.blp` body → opaque islands as px rects. `?gap=` (0–32, default 1) and `?minpx=` (default 16) tune the detection.              |
+| `POST` | `/api/v1/blp/alpha`                  | Raw `.blp` body → first opaque row/column per side (nine-slice margins).                                                            |
+| `POST` | `/api/v1/blp/tc`                     | JSON `{ width, height, px\|tc }` → pixel rect **and** `SetTexCoord`, normalized or integer-over-dimension.                          |
 | `GET`  | `/api/v1/atlas/:fdid?build=`         | Atlas lookups: `atlas` (region list), `texture` (not an atlas) or `missing`.                                                        |
 | `GET`  | `/api/v1/atlas/:fdid/regions`        | Region names only (lightweight).                                                                                                    |
 | `GET`  | `/api/v1/atlas/:fdid/export`         | Whole-atlas Lua export.                                                                                                             |
@@ -156,6 +159,31 @@ curl -s -X POST http://127.0.0.1:8000/api/v1/scan \
 # whole-atlas Lua export (same bytes the UI emits)
 curl -s "http://127.0.0.1:8000/api/v1/atlas/878877/export"
 ```
+
+#### Working with a local `.blp` file
+
+The `/blp/*` endpoints take the **raw file as the request body**. A multipart
+form upload sends the form envelope, not the texture, so `curl -F` fails — the
+response names the offending bytes (`Body is not a BLP file: it starts with
+"----"`). Send raw bytes:
+
+```sh
+# decode a local sheet
+curl -s --data-binary @RarityGemAtlas.blp \
+  -H 'Content-Type: application/octet-stream' \
+  http://127.0.0.1:8000/api/v1/blp/decode
+
+# find every opaque region in it (no FileDataID needed)
+curl -s --data-binary @RarityGemAtlas.blp \
+  -H 'Content-Type: application/octet-stream' \
+  http://127.0.0.1:8000/api/v1/blp/islands
+```
+
+Both BLP1 and BLP2 decode. A failure that says "not a BLP file" means the
+payload was not a BLP; a failure that says "BLP decode failed for a valid BLP2
+header" means the bytes _are_ a BLP and the codec could not expand that one.
+The two are never conflated, because guessing wrong here costs an afternoon
+chasing a decoder bug that does not exist.
 
 The request/response contract is the single source of truth in `src/shared/schemas.ts`; `/documentation` renders it live. Cache under `cache/` makes repeated agent runs fast and offline for previously fetched data.
 
@@ -248,6 +276,39 @@ Restart the assistant after editing the config, then try: `ask the atlas server 
 
 Developers can iterate without a client: `npm run start:mcp:http` exposes the same tools as streamable HTTP at `http://127.0.0.1:8087/mcp` (`MCP_HOST`/`MCP_PORT`/`ATLAS_URL` env vars) for remote or debugging clients.
 
+#### Giving the MCP a local `.blp`
+
+`atlas_blp_islands` and `atlas_blp_alpha` take a `blp` argument that is **either
+a filesystem path or base64 bytes** — whichever is easier for you. A path is
+read from disk and encoded for you, so there is no `base64 -w0` step and no
+30k-character argument to paste:
+
+```
+atlas_blp_islands { "blp": "/home/you/textures/RarityGemAtlas.blp" }
+atlas_blp_islands { "blp": "./Atlas.blp" }
+atlas_blp_islands { "blp": "file:///home/you/textures/Atlas.blp" }
+atlas_blp_islands { "blp": "QkxQMgEAAAACC…" }   // base64 still works
+```
+
+The argument is validated before anything is sent: a readable `.blp` is
+required, a `BLP1`/`BLP2` magic is enforced, and files over 64 MB are refused.
+Invalid input comes back as a specific error (`Invalid \`blp\` input: … cannot be
+read`, or `… starts with "{. ", not BLP1/BLP2`) rather than a generic format
+complaint — so a bad argument is never mistaken for an unsupported BLP version.
+
+Regions come back as pixel bounding boxes, **not names**: a local `.blp` does
+not carry region names, those only exist for wago.tools atlases resolved by
+FileDataID. Pipe the rects into `atlas_blp_tc` to get the `SetTexCoord` lines, or
+into `atlas_scan`'s `sheet.members` to match them against real member names:
+
+```
+atlas_blp_islands { "blp": "./RarityGemAtlas.blp" }
+  → 128×128, 12 island(s): 32×32 at (64,0); 24×30 at (4,2); 16×23 at (8,37) …
+
+atlas_blp_tc { "width": 128, "height": 128, "px": { "x": 8, "y": 37, "w": 16, "h": 23 } }
+  → :SetTexCoord(8/128, 24/128, 37/128, 60/128)
+```
+
 ## Data & caching
 
 All durable state lives under `cache/` at the project root:
@@ -275,6 +336,7 @@ First fetch of a FileDataID goes to wago.tools; everything after that is served 
 │   │   └── ui/          # DOM glue: list, meta, scan panel, load (BLP preview), toast, debug
 │   ├── server/          # Fastify app, routes (v1 + legacy), services, config
 │   ├── mcp/             # MCP server over v1 (stdio + streamable HTTP), for opencode/Claude
+│   │                    #   blpInput.ts resolves a .blp path or base64 argument + validates its magic
 │   └── shared/          # zod schemas, Lua exporter (5 styles), atlas scanner, alpha islands, coords
 ├── tests/
 │   ├── unit/            # pure-logic tests (vitest, node env)
@@ -306,6 +368,7 @@ npm run fetch:blp-fixtures # grab sample .blp files into tests/fixtures/
 
 - **Live lookups need internet** access to wago.tools; the app degrades gracefully (offline build list, cached files) but cannot fetch unseen data.
 - Atlas previews are reprojected PNGs decoded from `.blp`; very large sheets are scaled to fit the browser canvas.
+- **Local `.blp` islands have no names.** A BLP file stores pixels, not region identifiers, so `atlas_blp_islands` returns bounding boxes only. Real names need a FileDataID (`atlas_get`) or a hand-written member list fed to `atlas_scan`.
 - The legacy v0 endpoints exist for backward compatibility only — new work should target `/api/v1` and be validated through the shared schemas.
 
 ## License

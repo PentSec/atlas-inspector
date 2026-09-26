@@ -2,6 +2,7 @@
  * BLP decoding contract (ADR-008). Swap targets hide behind this interface —
  * today `@pinta365/blp`, tomorrow `wow-blp-web` if goldens fail.
  */
+import { inflateSync } from "node:zlib";
 export interface DecodedBlp {
     width: number;
     height: number;
@@ -122,4 +123,103 @@ export function blpAlphaDepth(header: BlpHeader): number {
 export function pngSize(buf: Buffer): { w: number; h: number } {
     if (buf.length < 24) throw new Error("invalid PNG");
     return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+}
+
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function paeth(a: number, b: number, c: number): number {
+    const p = a + b - c;
+    const pa = Math.abs(p - a);
+    const pb = Math.abs(p - b);
+    const pc = Math.abs(p - c);
+    if (pa <= pb && pa <= pc) return a;
+    if (pb <= pc) return b;
+    return c;
+}
+
+function unfilter(filter: number, row: Uint8Array, prev: Uint8Array, bpp: number): void {
+    switch (filter) {
+        case 0:
+            return;
+        case 1:
+            for (let i = bpp; i < row.length; i++) row[i] = (row[i]! + row[i - bpp]!) & 255;
+            return;
+        case 2:
+            for (let i = 0; i < row.length; i++) row[i] = (row[i]! + (prev[i] ?? 0)) & 255;
+            return;
+        case 3:
+            for (let i = 0; i < row.length; i++) {
+                const left = i >= bpp ? row[i - bpp]! : 0;
+                row[i] = (row[i]! + Math.floor((left + (prev[i] ?? 0)) / 2)) & 255;
+            }
+            return;
+        case 4:
+            for (let i = 0; i < row.length; i++) {
+                const left = i >= bpp ? row[i - bpp]! : 0;
+                const up = prev[i] ?? 0;
+                const upLeft = i >= bpp ? (prev[i - bpp] ?? 0) : 0;
+                row[i] = (row[i]! + paeth(left, up, upLeft)) & 255;
+            }
+            return;
+        default:
+            throw new Error("invalid PNG");
+    }
+}
+
+/**
+ * One alpha byte per pixel from a decoded PNG (IHDR + IDAT). RGB sheets are
+ * treated as fully opaque. Throws when the buffer is not a supported PNG.
+ */
+export function pngAlphaChannel(buf: Buffer): Uint8Array {
+    if (buf.length < 33 || !buf.subarray(0, 8).equals(PNG_SIG)) throw new Error("invalid PNG");
+
+    const w = buf.readUInt32BE(16);
+    const h = buf.readUInt32BE(20);
+    const bitDepth = buf[24];
+    const colorType = buf[25];
+    const compression = buf[26];
+    const filter = buf[27];
+    const interlace = buf[28];
+    if (bitDepth !== 8 || compression !== 0 || filter !== 0 || interlace !== 0) {
+        throw new Error("invalid PNG");
+    }
+    const channels =
+        colorType === 6 ? 4 : colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 0 ? 1 : 0;
+    if (channels === 0 || w < 1 || h < 1) throw new Error("invalid PNG");
+
+    const idats: Buffer[] = [];
+    let off = 8;
+    while (off + 12 <= buf.length) {
+        const len = buf.readUInt32BE(off);
+        const type = buf.toString("latin1", off + 4, off + 8);
+        const start = off + 8;
+        const end = start + len;
+        if (end + 4 > buf.length) throw new Error("invalid PNG");
+        if (type === "IDAT") idats.push(buf.subarray(start, end));
+        if (type === "IEND") break;
+        off = end + 4;
+    }
+    if (idats.length === 0) throw new Error("invalid PNG");
+
+    const raw = inflateSync(Buffer.concat(idats));
+    const stride = w * channels;
+    const rowBytes = stride + 1;
+    if (raw.length < h * rowBytes) throw new Error("invalid PNG");
+
+    const alpha = new Uint8Array(w * h);
+    const prev = new Uint8Array(stride);
+    const row = new Uint8Array(stride);
+    for (let y = 0; y < h; y++) {
+        const base = y * rowBytes;
+        const filterType = raw[base]!;
+        row.set(raw.subarray(base + 1, base + 1 + stride));
+        unfilter(filterType, row, prev, channels);
+        prev.set(row);
+        for (let x = 0; x < w; x++) {
+            if (colorType === 6) alpha[y * w + x] = row[x * 4 + 3]!;
+            else if (colorType === 4) alpha[y * w + x] = row[x * 2 + 1]!;
+            else alpha[y * w + x] = 255;
+        }
+    }
+    return alpha;
 }
