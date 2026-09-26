@@ -22,13 +22,112 @@ Ships as a local web app: a **Fastify + TypeScript API** (Node.js) with a **stri
 
 ## How it works
 
-```
-┌──────────────┐   /api/v1/*    ┌──────────────────────────────┐   HTTPS    ┌──────────────┐
-│  Browser     │ ────────────► │  Node / Fastify API (TS)     │ ─────────► │  wago.tools  │
-│  client      │   JSON        │  parse .xml-lua + .blp, cache │   lookup   │  (files,     │
-│  (canvas)    │ ◄──────────── │  listfile, atlas, decode      │ ◄───────── │   builds,    │
-└──────────────┘               └──────────────────────────────┘            │   metadata)  │
-                                      │  cache/   (listfile.csv, blp, png…) └──────────────┘
+```mermaid
+flowchart TD
+
+subgraph group_browser["Browser workbench"]
+  node_main["UI event wiring<br/>[main.ts]"]
+  node_clientapi["API client<br/>[client.ts]"]
+  node_store["View state<br/>[store.ts]"]
+  node_canvas["Canvas rendering<br/>[draw.ts]"]
+  node_define["Region editing<br/>[regions.ts]"]
+  node_listui["Region list<br/>[list.ts]"]
+  node_scanui["Scan panel<br/>[scan.ts]"]
+end
+
+subgraph group_api["API and data"]
+  node_server["Fastify application<br/>[app.ts]"]
+  node_v1["Versioned API<br/>[v1.ts]"]
+  node_legacy["Legacy API<br/>[legacy.ts]"]
+  node_repo["Atlas repository<br/>[repo.ts]"]
+  node_wago["Wago source<br/>[wagoSource.ts]"]
+  node_cache[("Disk cache<br/>[cache.ts]")]
+  node_listfile["Listfile search<br/>[search.ts]"]
+  node_decode["BLP decoding<br/>[decodeService.ts]"]
+  node_decoder["BLP decoder adapter<br/>[pinta365Blp.ts]"]
+end
+
+subgraph group_analysis["Region analysis"]
+  node_scan["Addon scanner<br/>[scan.ts]"]
+  node_islands["Alpha islands<br/>[islands.ts]"]
+  node_lua["Lua exporters<br/>[lua.ts]"]
+  node_schemas["Wire schemas<br/>[schemas.ts]"]
+end
+
+subgraph group_agent["Agent interface"]
+  node_mcp["MCP server<br/>[server.ts]"]
+  node_tools["Atlas tools<br/>[tools.ts]"]
+  node_mcpclient["MCP API client<br/>[client.ts]"]
+end
+
+node_user(("Inspector user"))
+node_mcpuser(("MCP client"))
+
+node_user -->|"uses"| node_main
+node_main -->|"requests"| node_clientapi
+node_main -->|"updates"| node_store
+node_main -->|"renders"| node_canvas
+node_main -->|"edits"| node_define
+node_main -->|"renders"| node_listui
+node_main -->|"renders"| node_scanui
+node_clientapi -->|"HTTP requests"| node_v1
+node_server -->|"registers"| node_v1
+node_server -->|"registers"| node_legacy
+node_v1 -->|"resolves atlases"| node_repo
+node_repo -->|"fetches data"| node_wago
+node_repo -->|"reads/writes"| node_cache
+node_v1 -->|"searches"| node_listfile
+node_listfile -->|"reads/writes"| node_cache
+node_v1 -->|"decodes BLP"| node_decode
+node_decode -->|"decodes"| node_decoder
+node_decode -->|"caches PNG"| node_cache
+node_v1 -->|"analyzes alpha"| node_islands
+node_v1 -->|"scans source"| node_scan
+node_v1 -->|"formats export"| node_lua
+node_clientapi -->|"uses contracts"| node_schemas
+node_v1 -->|"validates"| node_schemas
+node_scanui -->|"analyzes locally"| node_scan
+node_listui -->|"formats regions"| node_lua
+node_mcpuser -.->|"connects"| node_mcp
+node_mcp -->|"registers tools"| node_tools
+node_tools -->|"invokes"| node_mcpclient
+node_mcpclient -.->|"HTTP requests"| node_v1
+
+click node_main "https://github.com/pentsec/atlas-inspector/blob/main/src/client/main.ts"
+click node_clientapi "https://github.com/pentsec/atlas-inspector/blob/main/src/client/api/client.ts"
+click node_store "https://github.com/pentsec/atlas-inspector/blob/main/src/client/state/store.ts"
+click node_canvas "https://github.com/pentsec/atlas-inspector/blob/main/src/client/canvas/draw.ts"
+click node_define "https://github.com/pentsec/atlas-inspector/blob/main/src/client/define/regions.ts"
+click node_listui "https://github.com/pentsec/atlas-inspector/blob/main/src/client/ui/list.ts"
+click node_scanui "https://github.com/pentsec/atlas-inspector/blob/main/src/client/ui/scan.ts"
+click node_server "https://github.com/pentsec/atlas-inspector/blob/main/src/server/app.ts"
+click node_v1 "https://github.com/pentsec/atlas-inspector/blob/main/src/server/routes/v1.ts"
+click node_legacy "https://github.com/pentsec/atlas-inspector/blob/main/src/server/routes/legacy.ts"
+click node_repo "https://github.com/pentsec/atlas-inspector/blob/main/src/server/services/repo.ts"
+click node_wago "https://github.com/pentsec/atlas-inspector/blob/main/src/server/adapters/wagoSource.ts"
+click node_cache "https://github.com/pentsec/atlas-inspector/blob/main/src/server/lib/cache.ts"
+click node_listfile "https://github.com/pentsec/atlas-inspector/blob/main/src/server/services/search.ts"
+click node_decode "https://github.com/pentsec/atlas-inspector/blob/main/src/server/services/decodeService.ts"
+click node_decoder "https://github.com/pentsec/atlas-inspector/blob/main/src/server/adapters/pinta365Blp.ts"
+click node_scan "https://github.com/pentsec/atlas-inspector/blob/main/src/shared/scan.ts"
+click node_islands "https://github.com/pentsec/atlas-inspector/blob/main/src/shared/islands.ts"
+click node_lua "https://github.com/pentsec/atlas-inspector/blob/main/src/shared/lua.ts"
+click node_schemas "https://github.com/pentsec/atlas-inspector/blob/main/src/shared/schemas.ts"
+click node_mcp "https://github.com/pentsec/atlas-inspector/blob/main/src/mcp/server.ts"
+click node_tools "https://github.com/pentsec/atlas-inspector/blob/main/src/mcp/tools.ts"
+click node_mcpclient "https://github.com/pentsec/atlas-inspector/blob/main/src/mcp/client.ts"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_main,node_clientapi,node_store,node_canvas,node_define,node_listui,node_scanui,node_user,node_mcpuser toneBlue
+class node_server,node_v1,node_legacy,node_repo,node_wago,node_cache,node_listfile,node_decode,node_decoder toneAmber
+class node_scan,node_islands,node_lua,node_schemas toneMint
+class node_mcp,node_tools,node_mcpclient toneRose
 ```
 
 - The API validates every response through shared zod schemas (`src/shared/`), exposed to both server and client — there is a single source of truth for the wire contract.
@@ -373,4 +472,4 @@ npm run fetch:blp-fixtures # grab sample .blp files into tests/fixtures/
 
 ## License
 
-Not yet declared — check with the maintainers before reusing outside personal/internal use.
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
